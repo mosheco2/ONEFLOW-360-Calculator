@@ -20,13 +20,20 @@
             body { background-color: white !important; padding: 0; margin: 0; }
             .bg-slate-50 { background-color: white !important; }
             .shadow-xl, .shadow-2xl, .shadow-sm { box-shadow: none !important; border: 1px solid #edf2f7 !important; }
-            main { padding: 0 !important; }
-            /* ביטול מצב דביק בהדפסה למניעת דף ריק */
-            .sticky, .fixed { position: relative !important; top: 0 !important; display: block !important; width: 100% !important; }
-            .receipt-card { border: none !important; width: 100% !important; margin: 0 !important; }
-            .quote-header { display: flex !important; justify-content: space-between; align-items: center; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 20px; }
-            /* הבטחה שצבעים יודפסו */
+            main { padding: 0 !important; max-width: 100% !important; margin: 0 !important; }
+            
+            /* מניעת דף ריק - ביטול מיקומים מוחלטים ודביקים */
+            .sticky, .fixed { position: relative !important; top: 0 !important; display: block !important; width: 100% !important; box-shadow: none !important; }
+            .receipt-card { border: 2px solid #e2e8f0 !important; width: 100% !important; margin-top: 20px !important; border-radius: 12px !important; overflow: hidden; }
+            
+            .quote-header { display: flex !important; justify-content: space-between; align-items: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 30px; }
+            
+            /* הבטחה שצבעים וגרפיקה יודפסו */
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            
+            /* התאמת טקסטים */
+            .text-3xl { font-size: 1.875rem !important; }
+            .text-4xl { font-size: 2.25rem !important; }
         }
         .quote-header { display: none; }
         input[type="range"] { direction: ltr; }
@@ -113,7 +120,7 @@
         // --- Main App Component ---
         function App() {
             // --- State ---
-            const STORAGE_KEY = 'oneflow_calc_v_final_stable'; 
+            const STORAGE_KEY = 'oneflow_calc_v_final_stable_fixed'; 
 
             // Load config
             const [config, setConfig] = useState(() => {
@@ -243,6 +250,10 @@
                 }
             };
 
+            const toggleModule = (id) => {
+                setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
+            };
+
             const ModuleButton = ({ module, isSelected }) => (
                 <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50'}`}>
                     <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}><IconComponent name={module.icon} size={24} /></div>
@@ -252,12 +263,9 @@
                 </button>
             );
 
-            const toggleModule = (id) => {
-                setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
-            };
-
             return (
                 <div dir="rtl" className="min-h-screen bg-slate-50 font-sans text-slate-800">
+                    {/* Header UI */}
                     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 no-print">
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -270,14 +278,15 @@
                         </div>
                     </header>
 
-                    {/* לוגו להדפסה */}
+                    {/* Header PDF */}
                     <div className="quote-header px-10 pt-10">
                         <div>
-                            <h1 className="text-2xl font-bold text-slate-900">הצעת מחיר: ONEFLOW 360 PRO</h1>
+                            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">הצעת מחיר: ONEFLOW 360 PRO</h1>
                             <p className="text-sm text-slate-500 mt-1">תאריך: {new Date().toLocaleDateString('he-IL')}</p>
                         </div>
                         <div className="text-right">
-                            <h2 className="text-xl font-bold text-blue-600">ONEBTN</h2>
+                            <div className="text-xl font-black text-blue-600">ONEBTN</div>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Digital Backbone Solutions</p>
                         </div>
                     </div>
 
@@ -310,7 +319,7 @@
                                     </div>
 
                                     <div>
-                                        <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Database size={16}/> ניהול מודולים וימי הקמה</h3>
+                                        <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Database size={16}/> ניהול מודולים</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
                                             {config.modules.map((m, idx) => (
                                                 <div key={m.id} className="flex items-center gap-2 bg-white p-2 border rounded-lg shadow-sm">
@@ -377,17 +386,16 @@
                                     </div>
                                 </div>
                                 <button onClick={() => setIsAdminOpen(false)} className="w-full mt-10 py-3 bg-slate-900 text-white rounded-xl font-bold shadow-xl flex items-center justify-center gap-2">
-                                   <Save size={18} /> שמור שינויים וחזור למחשבון
+                                   <Save size={18} /> שמור שינויים וחזור
                                 </button>
                             </div>
                         ) : (
-                            /* --- ממשק משתמש --- */
+                            /* --- מחשבון משתמש --- */
                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                                 <div className="lg:col-span-8 space-y-8 pb-20 lg:pb-0 no-print">
-                                    {/* מודולים */}
                                     <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
                                         <div className="flex justify-between items-center mb-6">
-                                            <h3 className="text-lg font-bold flex items-center gap-2"><Database className="text-blue-500" size={20} /> {config.uiText.modulesHeader}</h3>
+                                            <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Database className="text-blue-500" size={20} /> {config.uiText.modulesHeader}</h3>
                                             <span className="text-xs font-bold text-slate-400">{selectedModules.length} נבחרו</span>
                                         </div>
                                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -395,47 +403,43 @@
                                         </div>
                                     </section>
 
-                                    {/* משתמשים */}
                                     <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
                                         <div className="flex justify-between items-center mb-4">
-                                            <h3 className="text-lg font-bold flex items-center gap-2"><Users className="text-blue-500" size={20} /> {config.uiText.usersHeader}</h3>
-                                            <div className="text-2xl font-black text-slate-800">{userCount}</div>
+                                            <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800"><Users className="text-blue-500" size={20} /> {config.uiText.usersHeader}</h3>
+                                            <div className="text-2xl font-black text-slate-800 tabular-nums">{userCount}</div>
                                         </div>
-                                        <input type="range" min="1" max="100" value={userCount} onChange={e => setUserCount(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+                                        <input type="range" min="1" max="100" value={userCount} onChange={e => setUserCount(Number(e.target.value))} className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                                     </section>
 
-                                    {/* טרנזקציות */}
                                     <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-                                        <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><Activity className="text-blue-500" size={20} /> {config.uiText.tiersHeader}</h3>
+                                        <h3 className="text-lg font-bold flex items-center gap-2 mb-4 text-slate-800"><Activity className="text-blue-500" size={20} /> {config.uiText.tiersHeader}</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                                             {config.tiers.map(t => (
                                                 <div key={t.id} onClick={() => setSelectedTier(t.id)} className={`cursor-pointer rounded-xl p-4 border-2 transition-all ${selectedTier === t.id ? 'border-blue-600 bg-blue-50 shadow-md ring-1 ring-blue-100' : 'border-slate-100 hover:border-slate-200'}`}>
                                                     <div className="font-bold text-xs mb-1 text-slate-600">{t.name}</div>
-                                                    <div className="text-[10px] text-slate-400 mb-2 font-bold">עד {t.limit.toLocaleString()} פעולות</div>
-                                                    <div className="text-lg font-black text-slate-900">${t.price}</div>
+                                                    <div className="text-[10px] text-slate-400 mb-2 font-bold uppercase tracking-tight">עד {t.limit.toLocaleString()} פעולות</div>
+                                                    <div className="text-xl font-black text-slate-900">${t.price}</div>
                                                 </div>
                                             ))}
                                         </div>
                                     </section>
 
-                                    {/* AI */}
                                     <section className="rounded-2xl p-6 border-2 border-violet-100 bg-gradient-to-br from-white to-violet-50/50">
                                         <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Sparkles className="text-violet-600" /> {config.uiText.aiHeader}</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             {config.aiPackages.map(pkg => (
                                                 <div key={pkg.id} onClick={() => setSelectedAI(pkg.id)} className={`cursor-pointer rounded-xl p-4 border transition-all ${selectedAI === pkg.id ? 'border-violet-600 bg-white shadow-lg ring-1 ring-violet-200 scale-[1.01]' : 'border-slate-200/60 bg-white/50 hover:bg-white'}`}>
                                                     <div className="flex justify-between items-start">
-                                                        <div className="font-bold text-violet-700">{pkg.name}</div>
+                                                        <div className="font-bold text-violet-700 tracking-tight">{pkg.name}</div>
                                                         <div className="text-xl font-black text-slate-900">${pkg.price}</div>
                                                     </div>
-                                                    <p className="text-xs text-slate-500 mt-1 h-8 overflow-hidden">{pkg.description}</p>
-                                                    {pkg.limit > 0 && <div className="mt-3 inline-block bg-violet-50 text-violet-600 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight">עד {pkg.limit.toLocaleString()} פעולות</div>}
+                                                    <p className="text-xs text-slate-500 mt-1 h-8 overflow-hidden font-medium leading-relaxed">{pkg.description}</p>
+                                                    {pkg.limit > 0 && <div className="mt-4 inline-block bg-violet-50 text-violet-600 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tighter">עד {pkg.limit.toLocaleString()} פעולות AI</div>}
                                                 </div>
                                             ))}
                                         </div>
                                     </section>
 
-                                    {/* אזורים מותאמים אישית */}
                                     {config.customSections.map((sec) => (
                                         <section key={sec.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
                                             <h3 className="text-lg font-bold flex items-center gap-2 mb-4 text-slate-800"><Puzzle className="text-blue-500" /> {sec.title}</h3>
@@ -451,27 +455,38 @@
                                             </div>
                                         </section>
                                     ))}
-                                    
-                                    {/* תוכן PDF בלבד - פירוט מודולים */}
-                                    <div className="hidden print:block space-y-4">
-                                        <h3 className="text-xl font-black text-slate-900 border-b-2 pb-2">פירוט רכיבי מערכת</h3>
-                                        <div className="grid grid-cols-2 gap-6">
+
+                                    {/* --- מפרט להדפסה בלבד --- */}
+                                    <div className="hidden print:block space-y-6 pt-6">
+                                        <h3 className="text-xl font-black text-slate-900 border-b-4 border-blue-600 pb-2 mb-6 uppercase tracking-tight">מפרט טכני ופירוט רכיבים</h3>
+                                        <div className="grid grid-cols-2 gap-8">
                                             <div>
-                                                <h4 className="font-bold text-blue-600 text-sm mb-2">מודולים פעילים:</h4>
-                                                <ul className="text-xs space-y-1 font-medium list-disc list-inside">
-                                                    {config.modules.filter(m => selectedModules.includes(m.id)).map(m => <li key={m.id}>{m.name}</li>)}
+                                                <h4 className="font-black text-blue-600 text-xs uppercase mb-3 tracking-widest border-r-4 border-blue-600 pr-2">מודולים פעילים:</h4>
+                                                <ul className="text-sm space-y-1.5 font-bold text-slate-700">
+                                                    {config.modules.filter(m => selectedModules.includes(m.id)).map(m => <li key={m.id} className="flex items-center gap-2">• {m.name}</li>)}
                                                 </ul>
                                             </div>
-                                            <div className="space-y-4">
+                                            <div className="space-y-6">
                                                 <div>
-                                                    <h4 className="font-bold text-blue-600 text-sm mb-1">משתמשים וחבילה:</h4>
-                                                    <p className="text-xs font-bold text-slate-700">{userCount} משתמשים במערכת</p>
-                                                    <p className="text-xs font-bold text-slate-700">חבילה: {config.tiers.find(t => t.id === selectedTier)?.name}</p>
+                                                    <h4 className="font-black text-blue-600 text-xs uppercase mb-2 tracking-widest border-r-4 border-blue-600 pr-2">משתמשים וחבילה:</h4>
+                                                    <p className="text-sm font-bold text-slate-800">{userCount} רשיונות משתמש</p>
+                                                    <p className="text-sm font-bold text-slate-800">חבילת טרנזקציות: {config.tiers.find(t => t.id === selectedTier)?.name}</p>
                                                 </div>
                                                 {selectedAI !== 'none' && (
                                                     <div>
-                                                        <h4 className="font-bold text-violet-600 text-sm mb-1">יכולות AI:</h4>
-                                                        <p className="text-xs font-bold text-slate-700">{config.aiPackages.find(a => a.id === selectedAI)?.name}</p>
+                                                        <h4 className="font-black text-violet-600 text-xs uppercase mb-2 tracking-widest border-r-4 border-violet-600 pr-2">יכולות AI:</h4>
+                                                        <p className="text-sm font-bold text-slate-800">{config.aiPackages.find(a => a.id === selectedAI)?.name}</p>
+                                                    </div>
+                                                )}
+                                                {config.customSections.some(s => customSelections[s.id] && customSelections[s.id].indexOf('_0') === -1) && (
+                                                    <div>
+                                                        <h4 className="font-black text-blue-600 text-xs uppercase mb-2 tracking-widest border-r-4 border-blue-600 pr-2">שירותים נוספים:</h4>
+                                                        <ul className="text-sm font-bold text-slate-800">
+                                                            {config.customSections.map(s => {
+                                                                const pkg = s.packages.find(p => p.id === customSelections[s.id]);
+                                                                return pkg && pkg.price > 0 ? <li key={s.id}>• {s.title}: {pkg.name}</li> : null;
+                                                            })}
+                                                        </ul>
                                                     </div>
                                                 )}
                                             </div>
@@ -479,63 +494,68 @@
                                     </div>
                                 </div>
 
-                                {/* לוח סיכום */}
+                                {/* Summary Receipt */}
                                 <div className={`fixed bottom-0 left-0 right-0 z-20 p-4 bg-white border-t lg:static lg:col-span-4 lg:p-0 lg:bg-transparent lg:border-none receipt-card ${showSummary ? 'block' : 'hidden lg:block'}`}>
                                     <div className="sticky top-24 space-y-4">
-                                        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-                                            <div className="bg-slate-900 text-white p-6 no-print">
-                                                <h2 className="text-xl font-bold tracking-tight">סיכום הצעת מחיר</h2>
+                                        <div className="bg-white rounded-[2rem] shadow-2xl border-4 border-white overflow-hidden">
+                                            <div className="bg-slate-900 text-white p-8 no-print">
+                                                <h2 className="text-2xl font-black tracking-tight uppercase">סיכום הצעה</h2>
                                             </div>
-                                            <div className="p-6 space-y-4">
-                                                <div className="space-y-2 pb-4 border-b border-slate-100">
-                                                    <div className="flex justify-between text-sm text-slate-500 font-bold"><span>תשתית ומודולים</span><span className="font-black text-slate-900">${totals.backboneTotal}</span></div>
-                                                    {totals.aiCost > 0 && <div className="flex justify-between text-sm text-violet-600 font-bold"><span>תוספת AI</span><span className="font-black">${totals.aiCost}</span></div>}
-                                                    {totals.customBreakdown.map((c, i) => <div key={i} className="flex justify-between text-xs text-slate-500 italic"><span>{c.sectionName}</span><span className="font-bold text-slate-700">${c.price}</span></div>)}
+                                            <div className="p-8 space-y-6">
+                                                <div className="space-y-3 pb-6 border-b-2 border-dashed border-slate-100">
+                                                    <div className="flex justify-between text-sm text-slate-500 font-bold"><span>תשתית ומודולים</span><span className="font-black text-slate-900 tracking-tighter">${totals.backboneTotal.toLocaleString()}</span></div>
+                                                    {totals.aiCost > 0 && <div className="flex justify-between text-sm text-violet-600 font-bold"><span>תוספת AI</span><span className="font-black tracking-tighter">${totals.aiCost.toLocaleString()}</span></div>}
+                                                    {totals.customBreakdown.map((c, i) => <div key={i} className="flex justify-between text-xs text-slate-400 font-bold italic tracking-tight"><span>{c.sectionName}</span><span className="font-bold text-slate-700">${c.price.toLocaleString()}</span></div>)}
                                                 </div>
 
                                                 <div className="pt-2">
                                                     <div className="flex justify-between items-baseline mb-1">
-                                                        <span className="text-xs font-black text-blue-600 uppercase tracking-wider">חודשי קבוע (MRR)</span>
-                                                        <span className="text-3xl font-black text-slate-900 tracking-tighter">${totals.totalMRR.toLocaleString()}</span>
+                                                        <span className="text-[11px] font-black text-blue-600 uppercase tracking-widest">חודשי קבוע (MRR)</span>
+                                                        <div className="text-right">
+                                                            <div className="text-4xl font-black text-slate-900 tracking-tighter">${totals.totalMRR.toLocaleString()}</div>
+                                                            <div className="text-[10px] font-black text-slate-400 mt-1 uppercase">≈ {Math.round(totals.totalNIS).toLocaleString()} ₪</div>
+                                                        </div>
                                                     </div>
-                                                    <div className="text-xs text-slate-400 text-left font-black italic tracking-tight">≈ {Math.round(totals.totalNIS).toLocaleString()} ₪</div>
                                                 </div>
 
-                                                <div className="bg-orange-50 p-5 rounded-2xl border-2 border-orange-100 mt-4 space-y-2">
+                                                <div className="bg-orange-50/70 p-6 rounded-[2rem] border-2 border-orange-100 mt-6 space-y-4">
                                                     <div className="flex justify-between items-center">
-                                                        <span className="text-xs font-black text-orange-800 uppercase tracking-wide">עלות הקמה חד-פעמית</span>
-                                                        <span className="text-xl font-black text-orange-700">${totals.totalSetupCost.toLocaleString()}</span>
+                                                        <span className="text-[11px] font-black text-orange-800 uppercase tracking-widest">הקמה חד-פעמית</span>
+                                                        <span className="text-2xl font-black text-orange-700 tracking-tighter">${totals.totalSetupCost.toLocaleString()}</span>
                                                     </div>
-                                                    <div className="text-[10px] text-orange-600/80 font-black italic text-left">≈ {Math.round(totals.setupCostNIS).toLocaleString()} ₪</div>
-                                                    <div className="flex items-center gap-2 text-xs text-orange-700 border-t border-orange-200 pt-3 mt-1 font-bold">
-                                                        <Clock size={16}/>
+                                                    <div className="text-[10px] text-orange-600 font-black italic text-left tracking-tight">≈ {Math.round(totals.setupCostNIS).toLocaleString()} ₪</div>
+                                                    <div className="flex items-center gap-3 text-xs text-orange-700 border-t border-orange-200/50 pt-4 font-black bg-white/50 p-3 rounded-2xl">
+                                                        <Clock size={18}/>
                                                         <span>זמן משוער: <strong>{totals.totalSetupDays} ימי עבודה</strong></span>
                                                     </div>
                                                 </div>
 
-                                                <div className="pt-6 space-y-3 no-print">
-                                                    <button onClick={handleCreatePDF} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-200 active:scale-95">
-                                                        <FileText size={20} /> צור PDF
+                                                <div className="pt-8 space-y-3 no-print">
+                                                    <button onClick={handleCreatePDF} className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-200 active:scale-95">
+                                                        <FileText size={24} /> צור PDF
                                                     </button>
                                                 </div>
                                                 
-                                                <div className="hidden print:block mt-10 text-[10px] text-slate-400 border-t border-dashed pt-4 leading-relaxed font-bold italic">
-                                                    <p>* המחירים אינם כוללים מע"מ כחוק.</p>
-                                                    <p>* שער המרה לחישוב: {config.exchangeRate} ₪.</p>
-                                                    <p>* תוקף הצעת המחיר: 14 ימי עסקים.</p>
+                                                <div className="hidden print:block mt-12 text-[10px] text-slate-400 border-t-2 border-slate-100 pt-8 leading-relaxed font-bold italic">
+                                                    <div className="flex justify-between mb-2 uppercase tracking-tighter text-slate-500 font-black">
+                                                        <span>* המחירים אינם כוללים מע"מ כחוק.</span>
+                                                        <span>שער המרה: {config.exchangeRate}</span>
+                                                    </div>
+                                                    <p>* הפלטפורמה מבוססת על ONEFLOW PRO ERP Hybrid Infrastructure.</p>
+                                                    <p>* תוקף הצעת המחיר ל-14 ימי עסקים בלבד.</p>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* כפתור מובייל */}
-                                <div className="fixed bottom-4 left-4 right-4 lg:hidden z-30 no-print">
-                                    <button onClick={() => setShowSummary(!showSummary)} className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-2xl flex justify-between px-8 items-center border border-slate-700">
-                                        <span className="uppercase text-[10px] tracking-widest">{showSummary ? 'סגור סיכום' : 'צפה בסיכום עסקה'}</span>
-                                        <div className="text-left font-black leading-tight">
-                                            <div className="text-lg">${totals.totalMRR.toLocaleString()}</div>
-                                            <div className="text-[8px] opacity-70 tracking-widest uppercase">+ ${totals.totalSetupCost.toLocaleString()} setup</div>
+                                {/* Mobile Button */}
+                                <div className="fixed bottom-6 left-6 right-6 lg:hidden z-50 no-print">
+                                    <button onClick={() => setShowSummary(!showSummary)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2rem] shadow-2xl flex justify-between px-10 items-center border border-slate-700">
+                                        <span className="text-[11px] uppercase tracking-widest">{showSummary ? 'סגור' : 'סיכום עסקה'}</span>
+                                        <div className="text-left leading-none font-black">
+                                            <div className="text-xl tracking-tighter">${totals.totalMRR.toLocaleString()}</div>
+                                            <div className="text-[9px] text-slate-400 mt-1 tracking-widest uppercase">+ ${totals.totalSetupCost.toLocaleString()} setup</div>
                                         </div>
                                     </button>
                                 </div>

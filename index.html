@@ -8,13 +8,29 @@
     <!-- טעינת Tailwind CSS לעיצוב -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- הגדרת פונטים (לא חובה, אבל משפר נראות) -->
+    <!-- הגדרת פונטים -->
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700;900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Heebo', sans-serif; }
+        
+        /* עיצוב מיוחד להדפסה */
+        @media print {
+            .no-print { display: none !important; }
+            body { background-color: white !important; }
+            .print-only { display: block !important; }
+            .shadow-xl, .shadow-sm, .shadow-md { box-shadow: none !important; border: 1px solid #e2e8f0 !important; }
+            .bg-slate-50 { background-color: white !important; }
+            main { padding: 0 !important; }
+            .sticky { position: static !important; }
+            
+            /* הצגת רק את סיכום העסקה והלוגו בצורה נקייה */
+            .print-header { display: flex !important; justify-content: space-between; align-items: center; border-bottom: 2px solid #2563eb; padding-bottom: 1rem; margin-bottom: 2rem; }
+            .quote-container { width: 100% !important; margin: 0 !important; border: none !important; }
+        }
+        .print-header { display: none; }
     </style>
 
-    <!-- מפת ייבוא (Import Map) - מאפשרת שימוש ב-import כמו בקוד המקורי -->
+    <!-- מפת ייבוא (Import Map) -->
     <script type="importmap">
     {
         "imports": {
@@ -25,7 +41,7 @@
     }
     </script>
 
-    <!-- טעינת המנוע של Babel לתרגום ה-React בדפדפן -->
+    <!-- טעינת המנוע של Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-slate-50">
@@ -39,10 +55,9 @@
             Calculator, Settings, Users, Package, Activity, BrainCircuit, Check, 
             Database, BarChart3, Truck, ShoppingCart, Mail, Megaphone, Briefcase, 
             Layers, Sparkles, Save, RotateCcw, Plus, Trash2, X, Puzzle, 
-            Headphones, Globe, Shield, Zap, Type, Coins, Hammer, Clock, Calendar, CheckSquare
+            Headphones, Globe, Shield, Zap, Type, Coins, Hammer, Clock, Calendar, CheckSquare, Printer, FileText
         } from 'lucide-react';
 
-        // --- Icon Mapping ---
         const AVAILABLE_ICONS = {
             ShoppingCart, Package, Layers, Truck, Megaphone, Mail, Briefcase, BarChart3,
             Activity, BrainCircuit, Users, Database, Puzzle, Headphones, Globe, Shield, Zap, Coins, Hammer, Clock, Calendar
@@ -53,14 +68,12 @@
             return <LucideIcon size={size} className={className} />;
         };
 
-        // --- Default Configuration ---
         const DEFAULT_CONFIG = {
             basePricePerModule: 100,
             basePricePerUser: 45,
             exchangeRate: 3.7, 
             setupHourlyRate: 350,
             setupHoursPerDay: 9,
-            
             uiText: {
                 modulesHeader: "רכיב א': מודולים פעילים",
                 usersHeader: "רכיב ב': משתמשים",
@@ -92,73 +105,45 @@
             customSections: [] 
         };
 
-        // --- Main App Component ---
         function App() {
-            // --- State ---
-            const STORAGE_KEY = 'oneflow_calc_data_v5'; // Incremented version
+            const STORAGE_KEY = 'oneflow_calc_data_v7';
 
-            // Load config
             const [config, setConfig] = useState(() => {
                 try {
                     const savedConfig = localStorage.getItem(STORAGE_KEY);
                     if (savedConfig) {
-                        const parsed = JSON.parse(savedConfig);
-                        return { 
-                            ...DEFAULT_CONFIG, 
-                            ...parsed,
-                            modules: parsed.modules.map(m => ({
-                                ...DEFAULT_CONFIG.modules.find(dm => dm.id === m.id) || {},
-                                ...m
-                            })),
-                            // Ensure isOneTime exists on AI packages if old data loaded
-                            aiPackages: parsed.aiPackages ? parsed.aiPackages.map(p => ({ isOneTime: false, ...p })) : DEFAULT_CONFIG.aiPackages
-                        };
+                        return JSON.parse(savedConfig);
                     }
                     return DEFAULT_CONFIG;
                 } catch (error) {
-                    console.error("Error loading config:", error);
                     return DEFAULT_CONFIG;
                 }
             });
             
-            // Selections
             const [selectedModules, setSelectedModules] = useState(['sales', 'inventory', 'bi']);
             const [userCount, setUserCount] = useState(5);
             const [selectedTier, setSelectedTier] = useState('S');
             const [selectedAI, setSelectedAI] = useState('none');
             const [customSelections, setCustomSelections] = useState({});
-
-            // UI
             const [isAdminOpen, setIsAdminOpen] = useState(false);
             const [showSummary, setShowSummary] = useState(false);
-            
-            // Admin UI State
             const [newModule, setNewModule] = useState({ name: '', icon: 'Package', setupDays: 0 });
             const [newSection, setNewSection] = useState({ title: '' });
 
-            // Save to localStorage
             useEffect(() => {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
             }, [config]);
 
-            // --- Calculations ---
             const calculateTotals = () => {
                 const modulesCost = selectedModules.length * config.basePricePerModule;
                 const usersCost = userCount * config.basePricePerUser;
                 const tierObj = config.tiers.find(t => t.id === selectedTier) || config.tiers[0];
                 const tierCost = tierObj.price;
                 
-                // AI Calculation (Split MRR / OneTime)
                 const aiObj = config.aiPackages.find(a => a.id === selectedAI) || config.aiPackages[0];
-                let aiCostMRR = 0;
-                let aiCostSetup = 0;
-                if (aiObj.isOneTime) {
-                    aiCostSetup = aiObj.price;
-                } else {
-                    aiCostMRR = aiObj.price;
-                }
+                let aiCostMRR = aiObj.isOneTime ? 0 : aiObj.price;
+                let aiCostSetup = aiObj.isOneTime ? aiObj.price : 0;
 
-                // Custom Sections Calculation (Split MRR / OneTime)
                 let customCostMRR = 0;
                 let customCostSetup = 0;
                 const customBreakdownMRR = [];
@@ -180,45 +165,38 @@
                     }
                 });
 
-                // Setup Calculations (Base Setup + OneTime Addons)
                 let totalSetupDays = 0;
                 config.modules.forEach(m => {
-                    if (selectedModules.includes(m.id)) {
-                        totalSetupDays += (m.setupDays || 0);
-                    }
+                    if (selectedModules.includes(m.id)) totalSetupDays += (m.setupDays || 0);
                 });
                 const dailyRate = (config.setupHourlyRate || 0) * (config.setupHoursPerDay || 0);
                 const modulesSetupCost = totalSetupDays * dailyRate;
                 const totalSetupCost = modulesSetupCost + aiCostSetup + customCostSetup;
 
-                // MRR Calculations
                 const backboneTotal = modulesCost + usersCost + tierCost;
                 const totalMRR = backboneTotal + aiCostMRR + customCostMRR;
                 
-                // Conversions
                 const totalNIS = totalMRR * (config.exchangeRate || 3.7);
                 const setupCostNIS = totalSetupCost * (config.exchangeRate || 3.7);
 
                 return { 
                     modulesCost, usersCost, tierCost, backboneTotal, 
-                    aiCostMRR, aiCostSetup,
-                    totalMRR, totalNIS, 
-                    customCostMRR, customBreakdownMRR,
-                    totalSetupDays, totalSetupCost, setupCostNIS, customBreakdownSetup
+                    aiCostMRR, aiCostSetup, totalMRR, totalNIS, 
+                    customCostMRR, customBreakdownMRR, totalSetupDays, 
+                    totalSetupCost, setupCostNIS, customBreakdownSetup
                 };
             };
 
             const totals = calculateTotals();
 
-            // --- Handlers ---
+            const handlePrint = () => {
+                window.print();
+            };
+
             const toggleModule = (id) => {
                 setSelectedModules(prev => 
                     prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
                 );
-            };
-
-            const handleCustomSelection = (sectionId, packageId) => {
-                setCustomSelections(prev => ({ ...prev, [sectionId]: packageId }));
             };
 
             const handleConfigChange = (section, index, field, value) => {
@@ -226,21 +204,13 @@
                 if (section === 'base') {
                     newConfig[field] = Number(value);
                 } else {
-                    // Handle boolean for checkbox, Number for prices, String for text
                     if (field === 'isOneTime') {
-                        newConfig[section][index][field] = value; // boolean passed directly
+                        newConfig[section][index][field] = value;
                     } else {
                         newConfig[section][index][field] = (field === 'price' || field === 'limit' || field === 'setupDays') ? Number(value) : value;
                     }
                 }
                 setConfig(newConfig);
-            };
-
-            const handleTextChange = (key, value) => {
-                setConfig(prev => ({
-                    ...prev,
-                    uiText: { ...prev.uiText, [key]: value }
-                }));
             };
 
             const updateModule = (id, field, value) => {
@@ -255,67 +225,29 @@
                 const id = `mod_${Date.now()}`;
                 setConfig(prev => ({
                     ...prev,
-                    modules: [...prev.modules, { 
-                        id, 
-                        name: newModule.name, 
-                        icon: newModule.icon,
-                        setupDays: Number(newModule.setupDays || 0)
-                    }]
+                    modules: [...prev.modules, { id, ...newModule, setupDays: Number(newModule.setupDays) }]
                 }));
                 setNewModule({ name: '', icon: 'Package', setupDays: 0 });
             };
 
             const removeModule = (id) => {
-                setConfig(prev => ({
-                    ...prev,
-                    modules: prev.modules.filter(m => m.id !== id)
-                }));
+                setConfig(prev => ({ ...prev, modules: prev.modules.filter(m => m.id !== id) }));
                 setSelectedModules(prev => prev.filter(m => m !== id));
             };
 
             const addCustomSection = () => {
                 if (!newSection.title) return;
                 const id = `sec_${Date.now()}`;
-                const newSec = {
-                    id,
-                    title: newSection.title,
-                    packages: [
-                        { id: `${id}_none`, name: 'לא נבחר', price: 0, description: 'ללא תוספת', limit: 0, isOneTime: false }
-                    ]
-                };
-                setConfig(prev => ({
-                    ...prev,
-                    customSections: [...prev.customSections, newSec]
-                }));
+                const newSec = { id, title: newSection.title, packages: [{ id: `${id}_none`, name: 'לא נבחר', price: 0, description: 'ללא תוספת', limit: 0, isOneTime: false }] };
+                setConfig(prev => ({ ...prev, customSections: [...prev.customSections, newSec] }));
                 setCustomSelections(prev => ({ ...prev, [id]: `${id}_none` }));
                 setNewSection({ title: '' });
             };
 
-            const addPackageToSection = (sectionIndex) => {
+            const updateSectionPackage = (sIdx, pIdx, field, value) => {
                 const newConfig = { ...config };
-                const section = newConfig.customSections[sectionIndex];
-                const pkgId = `${section.id}_pkg_${Date.now()}`;
-                section.packages.push({
-                    id: pkgId,
-                    name: 'חבילה חדשה',
-                    price: 100,
-                    description: 'תיאור החבילה',
-                    limit: 0,
-                    isOneTime: false
-                });
-                setConfig(newConfig);
-            };
-
-            const updateSectionPackage = (sectionIndex, pkgIndex, field, value) => {
-                const newConfig = { ...config };
-                const pkg = newConfig.customSections[sectionIndex].packages[pkgIndex];
+                const pkg = newConfig.customSections[sIdx].packages[pIdx];
                 pkg[field] = (field === 'price' || field === 'limit') ? Number(value) : value;
-                setConfig(newConfig);
-            };
-
-            const removeSection = (index) => {
-                const newConfig = { ...config };
-                newConfig.customSections.splice(index, 1);
                 setConfig(newConfig);
             };
 
@@ -328,646 +260,209 @@
             };
 
             const ModuleButton = ({ module, isSelected }) => (
-                <button
-                    onClick={() => toggleModule(module.id)}
-                    className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-200 border-2 ${
-                        isSelected 
-                        ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' 
-                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                >
-                    <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}>
-                        <IconComponent name={module.icon} size={24} />
-                    </div>
+                <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
+                    <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}><IconComponent name={module.icon} size={24} /></div>
                     <span className="text-sm font-medium">{module.name}</span>
-                    {module.setupDays > 0 && (
-                        <span className="text-[10px] text-slate-400 mt-1">{module.setupDays} ימי הקמה</span>
-                    )}
-                    {isSelected && (
-                        <div className="absolute top-2 right-2">
-                            <Check size={14} className="text-blue-600" />
-                        </div>
-                    )}
+                    {module.setupDays > 0 && <span className="text-[10px] text-slate-400 mt-1">{module.setupDays} ימי הקמה</span>}
+                    {isSelected && <div className="absolute top-2 right-2"><Check size={14} className="text-blue-600" /></div>}
                 </button>
             );
 
             return (
                 <div dir="rtl" className="min-h-screen bg-slate-50 font-sans text-slate-800">
-                    {/* Header */}
-                    <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                    
+                    {/* Header for Screen */}
+                    <header className="no-print bg-white border-b border-slate-200 sticky top-0 z-30">
+                        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">1</div>
                                 <h1 className="text-xl font-bold tracking-tight text-slate-900">ONEFLOW <span className="text-blue-600">360 PRO</span></h1>
                             </div>
-                            <button 
-                                onClick={() => setIsAdminOpen(!isAdminOpen)}
-                                className={`p-2 rounded-full transition-colors ${isAdminOpen ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}
-                            >
+                            <button onClick={() => setIsAdminOpen(!isAdminOpen)} className={`p-2 rounded-full transition-colors ${isAdminOpen ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}>
                                 <Settings size={20} />
                             </button>
                         </div>
                     </header>
 
-                    {/* Main Content */}
-                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                    {/* Header for Print */}
+                    <div className="print-header">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-900">הצעת מחיר: ONEFLOW 360 PRO</h1>
+                            <p className="text-sm text-slate-500">תאריך: {new Date().toLocaleDateString('he-IL')}</p>
+                        </div>
+                        <div className="text-right">
+                            <h2 className="text-xl font-bold text-blue-600">ONEBTN</h2>
+                            <p className="text-xs text-slate-500">Digital Backbone Solutions</p>
+                        </div>
+                    </div>
+
+                    <main className="max-w-7xl mx-auto px-4 py-8">
                         {isAdminOpen ? (
                             /* --- ADMIN PANEL --- */
-                            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 animate-in fade-in slide-in-from-top-4">
+                            <div className="no-print bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
                                 <div className="flex justify-between items-center mb-6 border-b pb-4">
-                                    <h2 className="text-xl font-bold flex items-center gap-2">
-                                        <Settings className="text-blue-600" />
-                                        ממשק ניהול ומחולל מחירים
-                                    </h2>
-                                    <button onClick={resetConfig} className="text-sm text-red-600 hover:underline flex items-center gap-1">
-                                        <RotateCcw size={14} />
-                                        אפס לברירת מחדל
-                                    </button>
+                                    <h2 className="text-xl font-bold flex items-center gap-2"><Settings className="text-blue-600" /> ממשק ניהול ומחולל מחירים</h2>
+                                    <button onClick={resetConfig} className="text-sm text-red-600 hover:underline flex items-center gap-1"><RotateCcw size={14} /> אפס לברירת מחדל</button>
                                 </div>
-
                                 <div className="space-y-10">
-                                    {/* 1. Base Prices & Setup Rates */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                                             <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Activity size={16}/> תמחור בסיס ושערי המרה</h3>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="text-xs text-slate-500 block mb-1">מחיר למודול ($)</label>
-                                                    <input type="number" value={config.basePricePerModule} onChange={(e) => handleConfigChange('base', null, 'basePricePerModule', e.target.value)} className="w-full p-2 border rounded-lg" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs text-slate-500 block mb-1">מחיר למשתמש ($)</label>
-                                                    <input type="number" value={config.basePricePerUser} onChange={(e) => handleConfigChange('base', null, 'basePricePerUser', e.target.value)} className="w-full p-2 border rounded-lg" />
-                                                </div>
-                                                 <div>
-                                                    <label className="text-xs text-slate-500 block mb-1">שער דולר (₪)</label>
-                                                    <input type="number" step="0.1" value={config.exchangeRate} onChange={(e) => handleConfigChange('base', null, 'exchangeRate', e.target.value)} className="w-full p-2 border rounded-lg bg-blue-50 border-blue-200" />
-                                                </div>
+                                            <div className="grid grid-cols-3 gap-4">
+                                                <div><label className="text-xs text-slate-500 block mb-1">מודול ($)</label><input type="number" value={config.basePricePerModule} onChange={(e) => handleConfigChange('base', null, 'basePricePerModule', e.target.value)} className="w-full p-2 border rounded-lg" /></div>
+                                                <div><label className="text-xs text-slate-500 block mb-1">משתמש ($)</label><input type="number" value={config.basePricePerUser} onChange={(e) => handleConfigChange('base', null, 'basePricePerUser', e.target.value)} className="w-full p-2 border rounded-lg" /></div>
+                                                <div><label className="text-xs text-slate-500 block mb-1">שער המרה (₪)</label><input type="number" step="0.1" value={config.exchangeRate} onChange={(e) => handleConfigChange('base', null, 'exchangeRate', e.target.value)} className="w-full p-2 border rounded-lg bg-blue-50 border-blue-200" /></div>
                                             </div>
                                         </div>
-
                                         <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
                                             <h3 className="font-bold text-orange-800 mb-3 flex items-center gap-2"><Hammer size={16}/> עלויות הקמה (Setup)</h3>
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="text-xs text-orange-600 block mb-1">תעריף שעה ($)</label>
-                                                    <input type="number" value={config.setupHourlyRate} onChange={(e) => handleConfigChange('base', null, 'setupHourlyRate', e.target.value)} className="w-full p-2 border rounded-lg" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs text-orange-600 block mb-1">שעות עבודה ביום</label>
-                                                    <input type="number" value={config.setupHoursPerDay} onChange={(e) => handleConfigChange('base', null, 'setupHoursPerDay', e.target.value)} className="w-full p-2 border rounded-lg" />
-                                                </div>
-                                                <div className="col-span-2 text-xs text-orange-500">
-                                                    * עלות יום עבודה מחושבת: ${(config.setupHourlyRate * config.setupHoursPerDay).toLocaleString()}
-                                                </div>
+                                                <div><label className="text-xs text-orange-600 block mb-1">תעריף שעה ($)</label><input type="number" value={config.setupHourlyRate} onChange={(e) => handleConfigChange('base', null, 'setupHourlyRate', e.target.value)} className="w-full p-2 border rounded-lg" /></div>
+                                                <div><label className="text-xs text-orange-600 block mb-1">שעות ביום</label><input type="number" value={config.setupHoursPerDay} onChange={(e) => handleConfigChange('base', null, 'setupHoursPerDay', e.target.value)} className="w-full p-2 border rounded-lg" /></div>
                                             </div>
                                         </div>
                                     </div>
-
-                                    {/* 2. Modules Editor (With Setup Days) */}
                                     <div>
-                                        <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Database size={16}/> עריכת מודולים וימי הקמה</h3>
-                                        <div className="space-y-2 mb-4">
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                {config.modules.map((m) => (
-                                                    <div key={m.id} className="flex items-center gap-2 bg-white p-2 border rounded-lg shadow-sm">
-                                                        <div className="relative group">
-                                                            <div className="p-2 bg-slate-100 rounded text-slate-500 cursor-pointer hover:bg-slate-200">
-                                                                <IconComponent name={m.icon} size={16} />
-                                                            </div>
-                                                            <select 
-                                                                value={m.icon} 
-                                                                onChange={(e) => updateModule(m.id, 'icon', e.target.value)}
-                                                                className="absolute inset-0 opacity-0 cursor-pointer"
-                                                            >
-                                                                {Object.keys(AVAILABLE_ICONS).map(iconName => (
-                                                                    <option key={iconName} value={iconName}>{iconName}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                        <div className="flex-grow">
-                                                            <input 
-                                                                value={m.name} 
-                                                                onChange={(e) => updateModule(m.id, 'name', e.target.value)}
-                                                                className="w-full font-medium text-sm border-b border-transparent focus:border-blue-500 outline-none mb-1"
-                                                            />
-                                                            <div className="flex items-center gap-1 text-xs text-slate-400">
-                                                                <span>ימי הקמה:</span>
-                                                                <input 
-                                                                    type="number"
-                                                                    value={m.setupDays} 
-                                                                    onChange={(e) => updateModule(m.id, 'setupDays', e.target.value)}
-                                                                    className="w-12 p-0.5 border rounded bg-slate-50 text-center"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <button onClick={() => removeModule(m.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={16} /></button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex gap-2 items-end bg-slate-50 p-3 rounded-lg border border-dashed border-slate-300">
-                                            <div className="flex-grow">
-                                                <label className="text-xs text-slate-500 block mb-1">הוספת מודול חדש</label>
-                                                <input value={newModule.name} onChange={e => setNewModule({...newModule, name: e.target.value})} className="w-full p-2 border rounded" placeholder="שם המודול" />
-                                            </div>
-                                            <div className="w-1/4">
-                                                <label className="text-xs text-slate-500 block mb-1">ימי הקמה</label>
-                                                <input type="number" value={newModule.setupDays} onChange={e => setNewModule({...newModule, setupDays: e.target.value})} className="w-full p-2 border rounded" />
-                                            </div>
-                                            <div className="w-1/4">
-                                                <label className="text-xs text-slate-500 block mb-1">אייקון</label>
-                                                <select value={newModule.icon} onChange={e => setNewModule({...newModule, icon: e.target.value})} className="w-full p-2 border rounded text-sm">
-                                                    {Object.keys(AVAILABLE_ICONS).map(iconName => (
-                                                        <option key={iconName} value={iconName}>{iconName}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <button onClick={addModule} className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"><Plus size={20} /></button>
-                                        </div>
-                                    </div>
-
-                                    {/* 3. Tiers & AI Packages */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4 border-t">
-                                        {/* Tiers Editor */}
-                                        <div>
-                                            <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Activity size={16}/> עריכת חבילות טרנזקציות</h3>
-                                            <div className="space-y-3">
-                                                {config.tiers.map((tier, idx) => (
-                                                    <div key={tier.id} className="grid grid-cols-12 gap-2 items-center text-sm">
-                                                        <div className="col-span-4">
-                                                            <label className="text-[10px] text-slate-400 block">שם</label>
-                                                            <input value={tier.name} onChange={(e) => handleConfigChange('tiers', idx, 'name', e.target.value)} className="w-full p-1 border rounded" />
-                                                        </div>
-                                                        <div className="col-span-4">
-                                                             <label className="text-[10px] text-slate-400 block">כמות</label>
-                                                            <input type="number" value={tier.limit} onChange={(e) => handleConfigChange('tiers', idx, 'limit', e.target.value)} className="w-full p-1 border rounded" />
-                                                        </div>
-                                                        <div className="col-span-4">
-                                                             <label className="text-[10px] text-slate-400 block">מחיר ($)</label>
-                                                            <input type="number" value={tier.price} onChange={(e) => handleConfigChange('tiers', idx, 'price', e.target.value)} className="w-full p-1 border rounded" />
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* AI Editor */}
-                                        <div>
-                                            <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Sparkles size={16}/> עריכת חבילות AI</h3>
-                                            <div className="space-y-4">
-                                                {config.aiPackages.map((pkg, idx) => (
-                                                    <div key={pkg.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200 relative">
-                                                        <div className="grid grid-cols-2 gap-2 mb-2">
-                                                             <div>
-                                                                <label className="text-[10px] text-slate-400 block">שם החבילה</label>
-                                                                <input value={pkg.name} onChange={(e) => handleConfigChange('aiPackages', idx, 'name', e.target.value)} className="w-full p-1 border rounded text-sm" />
-                                                            </div>
-                                                             <div>
-                                                                <label className="text-[10px] text-slate-400 block">תיאור</label>
-                                                                <input value={pkg.description} onChange={(e) => handleConfigChange('aiPackages', idx, 'description', e.target.value)} className="w-full p-1 border rounded text-sm" />
-                                                            </div>
-                                                        </div>
-                                                        <div className="grid grid-cols-3 gap-2">
-                                                             <div>
-                                                                <label className="text-[10px] text-slate-400 block">מגבלת פעולות</label>
-                                                                <input type="number" value={pkg.limit} onChange={(e) => handleConfigChange('aiPackages', idx, 'limit', e.target.value)} className="w-full p-1 border rounded text-sm" />
-                                                            </div>
-                                                             <div>
-                                                                <label className="text-[10px] text-slate-400 block">מחיר ($)</label>
-                                                                <input type="number" value={pkg.price} onChange={(e) => handleConfigChange('aiPackages', idx, 'price', e.target.value)} className="w-full p-1 border rounded text-sm" />
-                                                            </div>
-                                                            <div className="flex items-end pb-2">
-                                                                <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
-                                                                    <input 
-                                                                        type="checkbox" 
-                                                                        checked={pkg.isOneTime || false} 
-                                                                        onChange={(e) => handleConfigChange('aiPackages', idx, 'isOneTime', e.target.checked)}
-                                                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                                                    />
-                                                                    <span className="text-slate-600">חד פעמי?</span>
-                                                                </label>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* 4. Custom Sections Generator */}
-                                    <div className="border-t pt-6">
-                                        <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
-                                            <Puzzle size={20} className="text-purple-600"/> 
-                                            מחולל אזורי תמחור (Custom Pricing Sections)
-                                        </h3>
-                                        
-                                        <div className="space-y-6">
-                                            {config.customSections.map((section, sIdx) => (
-                                                <div key={section.id} className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                                                    <div className="flex justify-between items-center mb-4">
-                                                        <input 
-                                                            value={section.title} 
-                                                            onChange={(e) => {
-                                                                const newConf = {...config};
-                                                                newConf.customSections[sIdx].title = e.target.value;
-                                                                setConfig(newConf);
-                                                            }}
-                                                            className="font-bold text-lg bg-transparent border-b border-purple-300 focus:border-purple-600 outline-none text-purple-900"
-                                                        />
-                                                        <button onClick={() => removeSection(sIdx)} className="text-red-500 text-xs hover:underline">מחק אזור</button>
-                                                    </div>
-
-                                                    <div className="space-y-2 pl-4 border-r-2 border-purple-200">
-                                                        <div className="grid grid-cols-12 gap-2 mb-2 text-xs font-medium text-purple-900/60">
-                                                            <div className="col-span-3">שם החבילה</div>
-                                                            <div className="col-span-3">תיאור</div>
-                                                            <div className="col-span-2">כמות</div>
-                                                            <div className="col-span-2">מחיר</div>
-                                                            <div className="col-span-2">סוג</div>
-                                                        </div>
-                                                        {section.packages.map((pkg, pIdx) => (
-                                                            <div key={pkg.id} className="grid grid-cols-12 gap-2 items-center">
-                                                                <input value={pkg.name} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'name', e.target.value)} className="col-span-3 p-1 text-sm border rounded" placeholder="שם החבילה" />
-                                                                <input value={pkg.description} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'description', e.target.value)} className="col-span-3 p-1 text-sm border rounded" placeholder="תיאור" />
-                                                                <input type="number" value={pkg.limit} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'limit', e.target.value)} className="col-span-2 p-1 text-sm border rounded" placeholder="כמות" />
-                                                                <input type="number" value={pkg.price} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'price', e.target.value)} className="col-span-2 p-1 text-sm border rounded" placeholder="מחיר" />
-                                                                <div className="col-span-2 flex items-center gap-1 justify-center">
-                                                                    <label className="flex items-center gap-1 text-[10px] cursor-pointer">
-                                                                        <input 
-                                                                            type="checkbox" 
-                                                                            checked={pkg.isOneTime || false} 
-                                                                            onChange={(e) => updateSectionPackage(sIdx, pIdx, 'isOneTime', e.target.checked)}
-                                                                            className="w-3 h-3 rounded"
-                                                                        />
-                                                                        חד-פעמי
-                                                                    </label>
-                                                                    {pIdx > 0 && <button onClick={() => {
-                                                                        const newConf = {...config};
-                                                                        newConf.customSections[sIdx].packages.splice(pIdx, 1);
-                                                                        setConfig(newConf);
-                                                                    }} className="text-red-400 hover:text-red-600 mr-1"><X size={14}/></button>}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                        <button onClick={() => addPackageToSection(sIdx)} className="mt-2 text-xs flex items-center gap-1 text-purple-600 font-bold hover:bg-purple-100 px-2 py-1 rounded">
-                                                            <Plus size={12}/> הוסף חבילה לאזור זה
-                                                        </button>
-                                                    </div>
+                                        <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Database size={16}/> עריכת מודולים</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+                                            {config.modules.map((m) => (
+                                                <div key={m.id} className="flex items-center gap-2 bg-white p-2 border rounded-lg">
+                                                    <select value={m.icon} onChange={(e) => updateModule(m.id, 'icon', e.target.value)} className="p-1 border rounded text-xs">{Object.keys(AVAILABLE_ICONS).map(i => <option key={i} value={i}>{i}</option>)}</select>
+                                                    <input value={m.name} onChange={(e) => updateModule(m.id, 'name', e.target.value)} className="flex-grow font-medium text-sm border-none outline-none" />
+                                                    <input type="number" value={m.setupDays} onChange={(e) => updateModule(m.id, 'setupDays', e.target.value)} className="w-12 text-center text-xs border rounded" />
+                                                    <button onClick={() => removeModule(m.id)} className="text-red-400 p-1"><Trash2 size={16} /></button>
                                                 </div>
                                             ))}
                                         </div>
-
-                                        <div className="mt-4 flex gap-2 items-center bg-white border border-dashed border-slate-300 p-4 rounded-xl">
-                                            <input 
-                                                value={newSection.title} 
-                                                onChange={e => setNewSection({ title: e.target.value })} 
-                                                className="flex-grow p-2 border rounded" 
-                                                placeholder="שם אזור חדש (למשל: תמיכה VIP)" 
-                                            />
-                                            <button onClick={addCustomSection} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 font-medium">
-                                                צור אזור חדש
-                                            </button>
+                                        <div className="flex gap-2 items-end bg-slate-50 p-3 rounded-lg border-dashed border-2">
+                                            <input value={newModule.name} onChange={e => setNewModule({...newModule, name: e.target.value})} className="flex-grow p-2 border rounded" placeholder="שם מודול חדש" />
+                                            <button onClick={addModule} className="bg-blue-600 text-white p-2 rounded"><Plus size={20} /></button>
                                         </div>
                                     </div>
                                 </div>
-                                
                                 <div className="mt-8 flex justify-end sticky bottom-0 bg-white p-4 border-t">
-                                    <button onClick={() => setIsAdminOpen(false)} className="bg-blue-600 text-white px-8 py-3 rounded-xl flex items-center gap-2 hover:bg-blue-700 font-bold shadow-lg">
-                                        <Save size={18} /> שמור וסגור
-                                    </button>
+                                    <button onClick={() => setIsAdminOpen(false)} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg"><Save size={18} className="inline ml-2" /> שמור וסגור</button>
                                 </div>
                             </div>
                         ) : (
                             /* --- CALCULATOR INTERFACE --- */
                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                                 <div className="lg:col-span-8 space-y-8 pb-20 lg:pb-0">
-                                    {/* Modules */}
-                                    <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="text-lg font-bold flex items-center gap-2">
-                                                <Database className="text-blue-500" size={20} />
-                                                {config.uiText?.modulesHeader || "רכיב א': מודולים פעילים"}
-                                            </h3>
-                                            <span className="text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                                                {selectedModules.length} נבחרו
-                                            </span>
-                                        </div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                            {config.modules.map(module => (
-                                                <ModuleButton 
-                                                    key={module.id} 
-                                                    module={module} 
-                                                    isSelected={selectedModules.includes(module.id)} 
-                                                />
-                                            ))}
-                                        </div>
+                                    {/* Component Sections */}
+                                    <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 no-print">
+                                        <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><Database className="text-blue-500" size={20} /> {config.uiText?.modulesHeader}</h3>
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{config.modules.map(module => <ModuleButton key={module.id} module={module} isSelected={selectedModules.includes(module.id)} />)}</div>
                                     </section>
 
-                                    {/* Users */}
-                                    <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-                                        <div className="flex justify-between items-center mb-6">
-                                            <h3 className="text-lg font-bold flex items-center gap-2">
-                                                <Users className="text-blue-500" size={20} />
-                                                {config.uiText?.usersHeader || "רכיב ב': משתמשים"}
-                                            </h3>
-                                            <div className="text-2xl font-bold text-slate-800 tabular-nums">
-                                                {userCount}
-                                            </div>
-                                        </div>
-                                        <input 
-                                            type="range" 
-                                            min="1" 
-                                            max="100" 
-                                            value={userCount} 
-                                            onChange={(e) => setUserCount(Number(e.target.value))}
-                                            className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                                        />
-                                        <div className="flex justify-between text-xs text-slate-400 mt-2">
-                                            <span>1</span>
-                                            <span>25</span>
-                                            <span>50</span>
-                                            <span>75</span>
-                                            <span>100</span>
-                                        </div>
+                                    <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 no-print">
+                                        <div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold flex items-center gap-2"><Users className="text-blue-500" size={20} /> {config.uiText?.usersHeader}</h3><div className="text-2xl font-bold text-slate-800 tabular-nums">{userCount}</div></div>
+                                        <input type="range" min="1" max="100" value={userCount} onChange={(e) => setUserCount(Number(e.target.value))} className="w-full h-3 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                                     </section>
 
-                                    {/* Tiers */}
-                                    <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-                                        <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
-                                            <Activity className="text-blue-500" size={20} />
-                                            {config.uiText?.tiersHeader || "רכיב ג': חבילת טרנזקציות"}
-                                        </h3>
+                                    <section className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 no-print">
+                                        <h3 className="text-lg font-bold flex items-center gap-2 mb-4"><Activity className="text-blue-500" size={20} /> {config.uiText?.tiersHeader}</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                                             {config.tiers.map(tier => (
-                                                <div 
-                                                    key={tier.id}
-                                                    onClick={() => setSelectedTier(tier.id)}
-                                                    className={`cursor-pointer rounded-xl p-4 border-2 transition-all ${
-                                                        selectedTier === tier.id 
-                                                        ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-100 ring-offset-2' 
-                                                        : 'border-slate-200 hover:border-slate-300'
-                                                    }`}
-                                                >
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <span className={`text-sm font-bold ${selectedTier === tier.id ? 'text-blue-700' : 'text-slate-600'}`}>{tier.name}</span>
-                                                        {selectedTier === tier.id && <div className="w-2 h-2 rounded-full bg-blue-600"></div>}
-                                                    </div>
-                                                    <div className="text-xs text-slate-500 mb-2">עד {tier.limit.toLocaleString()} פעולות</div>
+                                                <div key={tier.id} onClick={() => setSelectedTier(tier.id)} className={`cursor-pointer rounded-xl p-4 border-2 transition-all ${selectedTier === tier.id ? 'border-blue-600 bg-blue-50' : 'border-slate-200'}`}>
+                                                    <div className="font-bold text-sm mb-1">{tier.name}</div>
+                                                    <div className="text-[10px] text-slate-500 mb-2">עד {tier.limit.toLocaleString()} פעולות</div>
                                                     <div className="text-lg font-bold text-slate-800">${tier.price}</div>
                                                 </div>
                                             ))}
                                         </div>
                                     </section>
 
-                                    {/* AI */}
-                                    <section className="rounded-2xl p-6 shadow-md border-2 border-violet-100 bg-gradient-to-br from-white to-violet-50/50">
-                                        <div className="flex items-center gap-2 mb-4">
-                                            <div className="p-2 bg-violet-100 rounded-lg text-violet-600">
-                                                <Sparkles size={20} />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-lg font-bold text-slate-900">
-                                                    {config.uiText?.aiHeader || "רכיב ד': כוח AI"}
-                                                </h3>
-                                                <p className="text-xs text-slate-500">שירות אופציונלי לחיזוי ואוטומציה</p>
-                                            </div>
-                                        </div>
-                                        
+                                    <section className="rounded-2xl p-6 border-2 border-violet-100 bg-gradient-to-br from-white to-violet-50/50 no-print">
+                                        <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Sparkles className="text-violet-600" /> {config.uiText?.aiHeader}</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             {config.aiPackages.map(pkg => (
-                                                <div 
-                                                    key={pkg.id}
-                                                    onClick={() => setSelectedAI(pkg.id)}
-                                                    className={`cursor-pointer rounded-xl p-4 border transition-all relative overflow-hidden ${
-                                                        selectedAI === pkg.id 
-                                                        ? 'border-violet-600 bg-white shadow-lg shadow-violet-100' 
-                                                        : 'border-slate-200/60 bg-white/50 hover:bg-white'
-                                                    }`}
-                                                >
-                                                    {selectedAI === pkg.id && (
-                                                        <div className="absolute top-0 right-0 w-full h-1 bg-violet-600"></div>
-                                                    )}
-                                                    <div className="flex justify-between items-start">
-                                                        <div>
-                                                            <div className={`font-bold ${selectedAI === pkg.id ? 'text-violet-700' : 'text-slate-700'}`}>
-                                                                {pkg.name}
-                                                            </div>
-                                                            <div className="text-xs text-slate-500 mt-1">{pkg.description}</div>
-                                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                                {pkg.limit > 0 && (
-                                                                    <div className="flex items-center gap-1 text-xs font-medium text-violet-600 bg-violet-50 px-2 py-1 rounded-full w-fit">
-                                                                        <BrainCircuit size={12} />
-                                                                        עד {pkg.limit.toLocaleString()}
-                                                                    </div>
-                                                                )}
-                                                                {pkg.isOneTime && (
-                                                                     <div className="flex items-center gap-1 text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded-full w-fit">
-                                                                        <Hammer size={12} />
-                                                                        חד-פעמי
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <div className="font-bold text-lg">${pkg.price}</div>
-                                                        </div>
+                                                <div key={pkg.id} onClick={() => setSelectedAI(pkg.id)} className={`cursor-pointer rounded-xl p-4 border transition-all ${selectedAI === pkg.id ? 'border-violet-600 bg-white shadow-md' : 'border-slate-200 bg-white'}`}>
+                                                    <div className="font-bold text-violet-700">{pkg.name}</div>
+                                                    <div className="text-xs text-slate-500 mt-1">{pkg.description}</div>
+                                                    <div className="flex gap-2 mt-2">
+                                                        {pkg.limit > 0 && <span className="bg-violet-50 text-violet-600 px-2 py-0.5 rounded-full text-[10px]">עד {pkg.limit.toLocaleString()}</span>}
+                                                        {pkg.isOneTime && <span className="bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full text-[10px]">חד-פעמי</span>}
                                                     </div>
+                                                    <div className="text-lg font-bold text-slate-800 mt-2">${pkg.price}</div>
                                                 </div>
                                             ))}
                                         </div>
                                     </section>
-
-                                    {/* Custom Sections */}
-                                    {config.customSections.map((section) => (
-                                        <section key={section.id} className="rounded-2xl p-6 shadow-sm border border-slate-200 bg-white">
-                                            <div className="flex items-center gap-2 mb-4">
-                                                <div className="p-2 bg-slate-100 rounded-lg text-slate-600">
-                                                    <Puzzle size={20} />
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-lg font-bold text-slate-900">{section.title}</h3>
-                                                    <p className="text-xs text-slate-500">בחירה מותאמת אישית</p>
-                                                </div>
+                                    
+                                    {/* Print Summary Content (Only visible in PDF) */}
+                                    <div className="hidden print:block space-y-4">
+                                        <h3 className="text-lg font-bold border-b pb-2">פירוט רכיבים שנבחרו</h3>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <h4 className="font-bold text-sm text-slate-600">מודולים פעילים:</h4>
+                                                <ul className="list-disc list-inside text-sm">
+                                                    {config.modules.filter(m => selectedModules.includes(m.id)).map(m => <li key={m.id}>{m.name}</li>)}
+                                                </ul>
                                             </div>
-                                            
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                {section.packages.map(pkg => {
-                                                    const isSelected = customSelections[section.id] === pkg.id;
-                                                    return (
-                                                        <div 
-                                                            key={pkg.id}
-                                                            onClick={() => handleCustomSelection(section.id, pkg.id)}
-                                                            className={`cursor-pointer rounded-xl p-4 border transition-all relative overflow-hidden ${
-                                                                isSelected 
-                                                                ? 'border-slate-800 bg-slate-50 shadow-md ring-1 ring-slate-800' 
-                                                                : 'border-slate-200 hover:bg-slate-50'
-                                                            }`}
-                                                        >
-                                                            <div className="flex justify-between items-start">
-                                                                <div>
-                                                                    <div className={`font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
-                                                                        {pkg.name}
-                                                                    </div>
-                                                                    <div className="text-xs text-slate-500 mt-1">{pkg.description}</div>
-                                                                    <div className="flex flex-wrap gap-2 mt-2">
-                                                                        {pkg.limit > 0 && (
-                                                                            <div className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full w-fit">
-                                                                                <Activity size={12} />
-                                                                                עד {pkg.limit.toLocaleString()}
-                                                                            </div>
-                                                                        )}
-                                                                         {pkg.isOneTime && (
-                                                                            <div className="flex items-center gap-1 text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded-full w-fit">
-                                                                                <Hammer size={12} />
-                                                                                חד-פעמי
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="text-right">
-                                                                    <div className="font-bold text-lg">${pkg.price}</div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </section>
-                                    ))}
-                                </div>
-
-                                {/* Right Column: Summary */}
-                                <div className={`
-                                    fixed bottom-0 left-0 right-0 z-20 p-4 bg-white border-t shadow-[0_-5px_20px_rgba(0,0,0,0.1)]
-                                    lg:static lg:col-span-4 lg:p-0 lg:bg-transparent lg:border-none lg:shadow-none lg:block
-                                    ${showSummary ? 'block' : 'hidden lg:block'}
-                                `}>
-                                    <div className="sticky top-24 space-y-4">
-                                        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-                                            <div className="bg-slate-900 text-white p-6">
-                                                <h2 className="text-xl font-bold">סיכום עסקה</h2>
-                                                <p className="text-slate-400 text-sm mt-1">חישוב MRR ועלויות הקמה</p>
-                                            </div>
-                                            
-                                            <div className="p-6 space-y-4">
-                                                <div className="space-y-3 pb-4 border-b border-slate-100">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-slate-600 flex items-center gap-2">
-                                                            <Database size={14} /> מודולים ({selectedModules.length})
-                                                        </span>
-                                                        <span className="font-medium">${totals.modulesCost.toLocaleString()}</span>
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-slate-600 flex items-center gap-2">
-                                                            <Users size={14} /> משתמשים ({userCount})
-                                                        </span>
-                                                        <span className="font-medium">${totals.usersCost.toLocaleString()}</span>
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-slate-600 flex items-center gap-2">
-                                                            <Activity size={14} /> טרנזקציות ({config.tiers.find(t => t.id === selectedTier)?.name.split(' ')[1]})
-                                                        </span>
-                                                        <span className="font-medium">${totals.tierCost.toLocaleString()}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex justify-between items-center text-sm bg-slate-50 p-3 rounded-lg">
-                                                    <span className="font-semibold text-slate-700">סה"כ תשתית (Backbone)</span>
-                                                    <span className="font-bold text-slate-900">${totals.backboneTotal.toLocaleString()}</span>
-                                                </div>
-
-                                                {/* Only show AI here if it is Monthly */}
-                                                {totals.aiCostMRR > 0 && (
-                                                    <div className="flex justify-between items-center p-3 rounded-lg border bg-violet-50 border-violet-100 text-violet-900">
-                                                        <span className="flex items-center gap-2 font-medium">
-                                                            <Sparkles size={14} className="text-violet-600" /> 
-                                                            תוספת AI (חודשי)
-                                                        </span>
-                                                        <span className="font-bold">${totals.aiCostMRR.toLocaleString()}</span>
-                                                    </div>
-                                                )}
-
-                                                {/* Only show Custom MRR here */}
-                                                {totals.customBreakdownMRR.map((item, idx) => (
-                                                    <div key={idx} className="flex justify-between items-center p-3 rounded-lg border bg-white border-slate-200 text-slate-700">
-                                                        <span className="flex items-center gap-2 font-medium text-xs">
-                                                            <Puzzle size={14} className="text-slate-500" /> 
-                                                            {item.sectionName}: {item.pkgName}
-                                                        </span>
-                                                        <span className="font-bold text-sm">${item.price.toLocaleString()}</span>
-                                                    </div>
-                                                ))}
-
-                                                <div className="pt-2 border-t mt-2">
-                                                    <div className="flex justify-between items-end mb-2">
-                                                        <div>
-                                                            <span className="block text-xs text-slate-500 font-bold mb-1">תשלום חודשי קבוע (MRR)</span>
-                                                            <span className="text-2xl font-black text-blue-600 tracking-tight block">
-                                                                ${totals.totalMRR.toLocaleString()}
-                                                            </span>
-                                                             <span className="text-xs text-slate-400 font-medium block">
-                                                                (≈ {totals.totalNIS.toLocaleString(undefined, { maximumFractionDigits: 0 })} ₪)
-                                                            </span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* SETUP COST SECTION */}
-                                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-100 mt-3 space-y-2">
-                                                        <div className="flex justify-between items-center mb-1">
-                                                            <span className="text-xs font-bold text-orange-800 flex items-center gap-1">
-                                                                <Hammer size={12}/> עלות הקמה חד-פעמית
-                                                            </span>
-                                                            <span className="text-lg font-bold text-orange-700">${totals.totalSetupCost.toLocaleString()}</span>
-                                                        </div>
-                                                        
-                                                        {/* Show breakdowns for One-Time items */}
-                                                        {totals.aiCostSetup > 0 && (
-                                                            <div className="flex justify-between text-[10px] text-orange-800/80 px-2">
-                                                                <span>+ AI Setup</span>
-                                                                <span>${totals.aiCostSetup.toLocaleString()}</span>
-                                                            </div>
-                                                        )}
-                                                        {totals.customBreakdownSetup.map((item, idx) => (
-                                                            <div key={idx} className="flex justify-between text-[10px] text-orange-800/80 px-2">
-                                                                <span>+ {item.sectionName}: {item.pkgName}</span>
-                                                                <span>${item.price.toLocaleString()}</span>
-                                                            </div>
-                                                        ))}
-
-                                                        <div className="flex justify-between items-center text-[10px] text-orange-600/80 border-t border-orange-200 pt-1">
-                                                            <span>(≈ {totals.setupCostNIS.toLocaleString(undefined, { maximumFractionDigits: 0 })} ₪)</span>
-                                                        </div>
-                                                        {totals.totalSetupDays > 0 && (
-                                                            <div className="flex items-center gap-2 text-xs text-orange-700 border-t border-orange-200 pt-2 mt-1">
-                                                                <Clock size={12}/>
-                                                                <span>זמן פרויקט משוער: <strong>{totals.totalSetupDays} ימי עבודה</strong></span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="p-4 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-3">
-                                                <button className="col-span-2 w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-colors shadow-lg shadow-slate-200">
-                                                    הפק הצעת מחיר
-                                                </button>
+                                            <div>
+                                                <h4 className="font-bold text-sm text-slate-600">משתמשים וחבילה:</h4>
+                                                <p className="text-sm">{userCount} משתמשים במערכת</p>
+                                                <p className="text-sm">חבילת פעילות: {config.tiers.find(t => t.id === selectedTier)?.name}</p>
+                                                {selectedAI !== 'none' && <p className="text-sm">שירותי AI: {config.aiPackages.find(a => a.id === selectedAI)?.name}</p>}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Mobile Toggle */}
-                                <div className="fixed bottom-4 left-4 right-4 lg:hidden z-30">
-                                    <button 
-                                        onClick={() => setShowSummary(!showSummary)}
-                                        className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-xl flex justify-between px-6 items-center"
-                                    >
+                                {/* Summary Sidebar */}
+                                <div className={`fixed bottom-0 left-0 right-0 z-20 p-4 bg-white border-t lg:static lg:col-span-4 lg:p-0 lg:bg-transparent lg:border-none quote-container ${showSummary ? 'block' : 'hidden lg:block'}`}>
+                                    <div className="sticky top-24 space-y-4">
+                                        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+                                            <div className="bg-slate-900 text-white p-6 no-print">
+                                                <h2 className="text-xl font-bold">סיכום הצעת מחיר</h2>
+                                            </div>
+                                            <div className="p-6 space-y-4">
+                                                {/* Summary Breakdown Items */}
+                                                <div className="space-y-3 pb-4 border-b">
+                                                    <div className="flex justify-between text-sm"><span>מודולים ({selectedModules.length})</span><span className="font-bold">${totals.modulesCost}</span></div>
+                                                    <div className="flex justify-between text-sm"><span>משתמשים ({userCount})</span><span className="font-bold">${totals.usersCost}</span></div>
+                                                    <div className="flex justify-between text-sm"><span>חבילת טרנזקציות</span><span className="font-bold">${totals.tierCost}</span></div>
+                                                    {totals.aiCostMRR > 0 && <div className="flex justify-between text-sm text-violet-600"><span>תוספת AI חודשית</span><span className="font-bold">${totals.aiCostMRR}</span></div>}
+                                                </div>
+
+                                                <div className="pt-2">
+                                                    <span className="block text-xs text-slate-500 font-bold mb-1">סה"כ חודשי (MRR)</span>
+                                                    <div className="flex justify-between items-end">
+                                                        <span className="text-3xl font-black text-blue-600 tracking-tight">${totals.totalMRR.toLocaleString()}</span>
+                                                        <span className="text-xs text-slate-400">≈ {totals.totalNIS.toLocaleString()} ₪</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 mt-4 space-y-2">
+                                                    <div className="flex justify-between items-center"><span className="text-xs font-bold text-orange-800">הקמה חד-פעמית</span><span className="text-xl font-bold text-orange-700">${totals.totalSetupCost.toLocaleString()}</span></div>
+                                                    <div className="text-[10px] text-orange-600/80">≈ {totals.setupCostNIS.toLocaleString()} ₪</div>
+                                                    <div className="flex items-center gap-2 text-xs text-orange-700 border-t border-orange-200 pt-2"><Clock size={12}/> <span>זמן משוער: <strong>{totals.totalSetupDays} ימי עבודה</strong></span></div>
+                                                </div>
+
+                                                <div className="pt-6 space-y-3 no-print">
+                                                    {/* Central Action Button */}
+                                                    <button onClick={handlePrint} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-200">
+                                                        <FileText size={18} /> צור הצעת מחיר
+                                                    </button>
+                                                    
+                                                    <button className="w-full py-3 border-2 border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50">שלח במייל</button>
+                                                </div>
+                                                
+                                                <div className="hidden print:block mt-8 text-[10px] text-slate-400 border-t pt-4">
+                                                    * המחירים אינם כוללים מע"מ. שער המרה לחישוב: {config.exchangeRate}. תוקף ההצעה: 14 יום.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Mobile Trigger */}
+                                <div className="fixed bottom-4 left-4 right-4 lg:hidden z-30 no-print">
+                                    <button onClick={() => setShowSummary(!showSummary)} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-xl flex justify-between px-6 items-center">
                                         <span>צפה בסיכום</span>
-                                        <div className="text-left">
-                                            <div className="text-sm">${totals.totalMRR.toLocaleString()} <span className="text-[10px] font-normal">/חודש</span></div>
-                                            {totals.totalSetupCost > 0 && <div className="text-[10px] opacity-90">+ ${totals.totalSetupCost.toLocaleString()} הקמה</div>}
+                                        <div className="text-left font-normal text-xs">
+                                            <div>${totals.totalMRR.toLocaleString()} /חודש</div>
+                                            <div>+ ${totals.totalSetupCost.toLocaleString()} הקמה</div>
                                         </div>
                                     </button>
                                 </div>

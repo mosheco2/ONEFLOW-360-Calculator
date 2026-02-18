@@ -39,7 +39,7 @@
             Calculator, Settings, Users, Package, Activity, BrainCircuit, Check, 
             Database, BarChart3, Truck, ShoppingCart, Mail, Megaphone, Briefcase, 
             Layers, Sparkles, Save, RotateCcw, Plus, Trash2, X, Puzzle, 
-            Headphones, Globe, Shield, Zap, Type, Coins, Hammer, Clock, Calendar
+            Headphones, Globe, Shield, Zap, Type, Coins, Hammer, Clock, Calendar, CheckSquare
         } from 'lucide-react';
 
         // --- Icon Mapping ---
@@ -58,7 +58,6 @@
             basePricePerModule: 100,
             basePricePerUser: 45,
             exchangeRate: 3.7, 
-            // הגדרות הקמה חדשות
             setupHourlyRate: 350,
             setupHoursPerDay: 9,
             
@@ -85,10 +84,10 @@
                 { id: 'ENT', name: 'Tier ENT', limit: 15000, price: 3000 },
             ],
             aiPackages: [
-                { id: 'none', name: 'ללא AI', price: 0, description: 'תשתית בלבד', limit: 0 },
-                { id: 'starter', name: 'AI Starter', price: 199, description: 'חיזוי בסיסי', limit: 500 },
-                { id: 'pro', name: 'AI Pro', price: 550, description: 'אופטימיזציה בזמן אמת', limit: 2500 },
-                { id: 'ultra', name: 'AI Ultra', price: 1200, description: 'סוכן מלא + שרשרת אספקה', limit: 10000 },
+                { id: 'none', name: 'ללא AI', price: 0, description: 'תשתית בלבד', limit: 0, isOneTime: false },
+                { id: 'starter', name: 'AI Starter', price: 199, description: 'חיזוי בסיסי', limit: 500, isOneTime: false },
+                { id: 'pro', name: 'AI Pro', price: 550, description: 'אופטימיזציה בזמן אמת', limit: 2500, isOneTime: false },
+                { id: 'ultra', name: 'AI Ultra', price: 1200, description: 'סוכן מלא + שרשרת אספקה', limit: 10000, isOneTime: false },
             ],
             customSections: [] 
         };
@@ -96,7 +95,7 @@
         // --- Main App Component ---
         function App() {
             // --- State ---
-            const STORAGE_KEY = 'oneflow_calc_data_v3'; // Incremented version to ensure new defaults load if needed
+            const STORAGE_KEY = 'oneflow_calc_data_v5'; // Incremented version
 
             // Load config
             const [config, setConfig] = useState(() => {
@@ -104,15 +103,15 @@
                     const savedConfig = localStorage.getItem(STORAGE_KEY);
                     if (savedConfig) {
                         const parsed = JSON.parse(savedConfig);
-                        // Merge with default to ensure new fields (setupDays etc) exist if loading old data
                         return { 
                             ...DEFAULT_CONFIG, 
                             ...parsed,
                             modules: parsed.modules.map(m => ({
                                 ...DEFAULT_CONFIG.modules.find(dm => dm.id === m.id) || {},
-                                ...m,
-                                setupDays: m.setupDays !== undefined ? m.setupDays : (DEFAULT_CONFIG.modules.find(dm => dm.id === m.id)?.setupDays || 0)
-                            }))
+                                ...m
+                            })),
+                            // Ensure isOneTime exists on AI packages if old data loaded
+                            aiPackages: parsed.aiPackages ? parsed.aiPackages.map(p => ({ isOneTime: false, ...p })) : DEFAULT_CONFIG.aiPackages
                         };
                     }
                     return DEFAULT_CONFIG;
@@ -146,28 +145,42 @@
             const calculateTotals = () => {
                 const modulesCost = selectedModules.length * config.basePricePerModule;
                 const usersCost = userCount * config.basePricePerUser;
-                
                 const tierObj = config.tiers.find(t => t.id === selectedTier) || config.tiers[0];
                 const tierCost = tierObj.price;
                 
+                // AI Calculation (Split MRR / OneTime)
                 const aiObj = config.aiPackages.find(a => a.id === selectedAI) || config.aiPackages[0];
-                const aiCost = aiObj.price;
+                let aiCostMRR = 0;
+                let aiCostSetup = 0;
+                if (aiObj.isOneTime) {
+                    aiCostSetup = aiObj.price;
+                } else {
+                    aiCostMRR = aiObj.price;
+                }
 
-                let customSectionsCost = 0;
-                const customBreakdown = [];
+                // Custom Sections Calculation (Split MRR / OneTime)
+                let customCostMRR = 0;
+                let customCostSetup = 0;
+                const customBreakdownMRR = [];
+                const customBreakdownSetup = [];
 
                 config.customSections.forEach(section => {
                     const selectedId = customSelections[section.id];
                     if (selectedId) {
                         const pkg = section.packages.find(p => p.id === selectedId);
                         if (pkg && pkg.price > 0) {
-                            customSectionsCost += pkg.price;
-                            customBreakdown.push({ sectionName: section.title, pkgName: pkg.name, price: pkg.price });
+                            if (pkg.isOneTime) {
+                                customCostSetup += pkg.price;
+                                customBreakdownSetup.push({ sectionName: section.title, pkgName: pkg.name, price: pkg.price });
+                            } else {
+                                customCostMRR += pkg.price;
+                                customBreakdownMRR.push({ sectionName: section.title, pkgName: pkg.name, price: pkg.price });
+                            }
                         }
                     }
                 });
 
-                // Setup Calculations
+                // Setup Calculations (Base Setup + OneTime Addons)
                 let totalSetupDays = 0;
                 config.modules.forEach(m => {
                     if (selectedModules.includes(m.id)) {
@@ -175,17 +188,23 @@
                     }
                 });
                 const dailyRate = (config.setupHourlyRate || 0) * (config.setupHoursPerDay || 0);
-                const totalSetupCost = totalSetupDays * dailyRate;
+                const modulesSetupCost = totalSetupDays * dailyRate;
+                const totalSetupCost = modulesSetupCost + aiCostSetup + customCostSetup;
 
+                // MRR Calculations
                 const backboneTotal = modulesCost + usersCost + tierCost;
-                const totalMRR = backboneTotal + aiCost + customSectionsCost;
+                const totalMRR = backboneTotal + aiCostMRR + customCostMRR;
+                
+                // Conversions
                 const totalNIS = totalMRR * (config.exchangeRate || 3.7);
                 const setupCostNIS = totalSetupCost * (config.exchangeRate || 3.7);
 
                 return { 
-                    modulesCost, usersCost, tierCost, aiCost, backboneTotal, totalMRR, totalNIS, 
-                    customSectionsCost, customBreakdown,
-                    totalSetupDays, totalSetupCost, setupCostNIS
+                    modulesCost, usersCost, tierCost, backboneTotal, 
+                    aiCostMRR, aiCostSetup,
+                    totalMRR, totalNIS, 
+                    customCostMRR, customBreakdownMRR,
+                    totalSetupDays, totalSetupCost, setupCostNIS, customBreakdownSetup
                 };
             };
 
@@ -207,7 +226,12 @@
                 if (section === 'base') {
                     newConfig[field] = Number(value);
                 } else {
-                    newConfig[section][index][field] = (field === 'price' || field === 'limit' || field === 'setupDays') ? Number(value) : value;
+                    // Handle boolean for checkbox, Number for prices, String for text
+                    if (field === 'isOneTime') {
+                        newConfig[section][index][field] = value; // boolean passed directly
+                    } else {
+                        newConfig[section][index][field] = (field === 'price' || field === 'limit' || field === 'setupDays') ? Number(value) : value;
+                    }
                 }
                 setConfig(newConfig);
             };
@@ -256,7 +280,7 @@
                     id,
                     title: newSection.title,
                     packages: [
-                        { id: `${id}_none`, name: 'לא נבחר', price: 0, description: 'ללא תוספת' }
+                        { id: `${id}_none`, name: 'לא נבחר', price: 0, description: 'ללא תוספת', limit: 0, isOneTime: false }
                     ]
                 };
                 setConfig(prev => ({
@@ -275,7 +299,9 @@
                     id: pkgId,
                     name: 'חבילה חדשה',
                     price: 100,
-                    description: 'תיאור החבילה'
+                    description: 'תיאור החבילה',
+                    limit: 0,
+                    isOneTime: false
                 });
                 setConfig(newConfig);
             };
@@ -283,7 +309,7 @@
             const updateSectionPackage = (sectionIndex, pkgIndex, field, value) => {
                 const newConfig = { ...config };
                 const pkg = newConfig.customSections[sectionIndex].packages[pkgIndex];
-                pkg[field] = field === 'price' ? Number(value) : value;
+                pkg[field] = (field === 'price' || field === 'limit') ? Number(value) : value;
                 setConfig(newConfig);
             };
 
@@ -492,7 +518,7 @@
                                             <h3 className="font-bold text-slate-700 mb-3 flex items-center gap-2"><Sparkles size={16}/> עריכת חבילות AI</h3>
                                             <div className="space-y-4">
                                                 {config.aiPackages.map((pkg, idx) => (
-                                                    <div key={pkg.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                    <div key={pkg.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200 relative">
                                                         <div className="grid grid-cols-2 gap-2 mb-2">
                                                              <div>
                                                                 <label className="text-[10px] text-slate-400 block">שם החבילה</label>
@@ -503,7 +529,7 @@
                                                                 <input value={pkg.description} onChange={(e) => handleConfigChange('aiPackages', idx, 'description', e.target.value)} className="w-full p-1 border rounded text-sm" />
                                                             </div>
                                                         </div>
-                                                        <div className="grid grid-cols-2 gap-2">
+                                                        <div className="grid grid-cols-3 gap-2">
                                                              <div>
                                                                 <label className="text-[10px] text-slate-400 block">מגבלת פעולות</label>
                                                                 <input type="number" value={pkg.limit} onChange={(e) => handleConfigChange('aiPackages', idx, 'limit', e.target.value)} className="w-full p-1 border rounded text-sm" />
@@ -512,10 +538,97 @@
                                                                 <label className="text-[10px] text-slate-400 block">מחיר ($)</label>
                                                                 <input type="number" value={pkg.price} onChange={(e) => handleConfigChange('aiPackages', idx, 'price', e.target.value)} className="w-full p-1 border rounded text-sm" />
                                                             </div>
+                                                            <div className="flex items-end pb-2">
+                                                                <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={pkg.isOneTime || false} 
+                                                                        onChange={(e) => handleConfigChange('aiPackages', idx, 'isOneTime', e.target.checked)}
+                                                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                                                    />
+                                                                    <span className="text-slate-600">חד פעמי?</span>
+                                                                </label>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 ))}
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 4. Custom Sections Generator */}
+                                    <div className="border-t pt-6">
+                                        <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
+                                            <Puzzle size={20} className="text-purple-600"/> 
+                                            מחולל אזורי תמחור (Custom Pricing Sections)
+                                        </h3>
+                                        
+                                        <div className="space-y-6">
+                                            {config.customSections.map((section, sIdx) => (
+                                                <div key={section.id} className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                                                    <div className="flex justify-between items-center mb-4">
+                                                        <input 
+                                                            value={section.title} 
+                                                            onChange={(e) => {
+                                                                const newConf = {...config};
+                                                                newConf.customSections[sIdx].title = e.target.value;
+                                                                setConfig(newConf);
+                                                            }}
+                                                            className="font-bold text-lg bg-transparent border-b border-purple-300 focus:border-purple-600 outline-none text-purple-900"
+                                                        />
+                                                        <button onClick={() => removeSection(sIdx)} className="text-red-500 text-xs hover:underline">מחק אזור</button>
+                                                    </div>
+
+                                                    <div className="space-y-2 pl-4 border-r-2 border-purple-200">
+                                                        <div className="grid grid-cols-12 gap-2 mb-2 text-xs font-medium text-purple-900/60">
+                                                            <div className="col-span-3">שם החבילה</div>
+                                                            <div className="col-span-3">תיאור</div>
+                                                            <div className="col-span-2">כמות</div>
+                                                            <div className="col-span-2">מחיר</div>
+                                                            <div className="col-span-2">סוג</div>
+                                                        </div>
+                                                        {section.packages.map((pkg, pIdx) => (
+                                                            <div key={pkg.id} className="grid grid-cols-12 gap-2 items-center">
+                                                                <input value={pkg.name} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'name', e.target.value)} className="col-span-3 p-1 text-sm border rounded" placeholder="שם החבילה" />
+                                                                <input value={pkg.description} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'description', e.target.value)} className="col-span-3 p-1 text-sm border rounded" placeholder="תיאור" />
+                                                                <input type="number" value={pkg.limit} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'limit', e.target.value)} className="col-span-2 p-1 text-sm border rounded" placeholder="כמות" />
+                                                                <input type="number" value={pkg.price} onChange={(e) => updateSectionPackage(sIdx, pIdx, 'price', e.target.value)} className="col-span-2 p-1 text-sm border rounded" placeholder="מחיר" />
+                                                                <div className="col-span-2 flex items-center gap-1 justify-center">
+                                                                    <label className="flex items-center gap-1 text-[10px] cursor-pointer">
+                                                                        <input 
+                                                                            type="checkbox" 
+                                                                            checked={pkg.isOneTime || false} 
+                                                                            onChange={(e) => updateSectionPackage(sIdx, pIdx, 'isOneTime', e.target.checked)}
+                                                                            className="w-3 h-3 rounded"
+                                                                        />
+                                                                        חד-פעמי
+                                                                    </label>
+                                                                    {pIdx > 0 && <button onClick={() => {
+                                                                        const newConf = {...config};
+                                                                        newConf.customSections[sIdx].packages.splice(pIdx, 1);
+                                                                        setConfig(newConf);
+                                                                    }} className="text-red-400 hover:text-red-600 mr-1"><X size={14}/></button>}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        <button onClick={() => addPackageToSection(sIdx)} className="mt-2 text-xs flex items-center gap-1 text-purple-600 font-bold hover:bg-purple-100 px-2 py-1 rounded">
+                                                            <Plus size={12}/> הוסף חבילה לאזור זה
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="mt-4 flex gap-2 items-center bg-white border border-dashed border-slate-300 p-4 rounded-xl">
+                                            <input 
+                                                value={newSection.title} 
+                                                onChange={e => setNewSection({ title: e.target.value })} 
+                                                className="flex-grow p-2 border rounded" 
+                                                placeholder="שם אזור חדש (למשל: תמיכה VIP)" 
+                                            />
+                                            <button onClick={addCustomSection} className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 font-medium">
+                                                צור אזור חדש
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -642,12 +755,20 @@
                                                                 {pkg.name}
                                                             </div>
                                                             <div className="text-xs text-slate-500 mt-1">{pkg.description}</div>
-                                                            {pkg.limit > 0 && (
-                                                                <div className="flex items-center gap-1 mt-2 text-xs font-medium text-violet-600 bg-violet-50 px-2 py-1 rounded-full w-fit">
-                                                                    <BrainCircuit size={12} />
-                                                                    עד {pkg.limit.toLocaleString()} פעולות AI
-                                                                </div>
-                                                            )}
+                                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                                {pkg.limit > 0 && (
+                                                                    <div className="flex items-center gap-1 text-xs font-medium text-violet-600 bg-violet-50 px-2 py-1 rounded-full w-fit">
+                                                                        <BrainCircuit size={12} />
+                                                                        עד {pkg.limit.toLocaleString()}
+                                                                    </div>
+                                                                )}
+                                                                {pkg.isOneTime && (
+                                                                     <div className="flex items-center gap-1 text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded-full w-fit">
+                                                                        <Hammer size={12} />
+                                                                        חד-פעמי
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                         <div className="text-right">
                                                             <div className="font-bold text-lg">${pkg.price}</div>
@@ -690,6 +811,20 @@
                                                                         {pkg.name}
                                                                     </div>
                                                                     <div className="text-xs text-slate-500 mt-1">{pkg.description}</div>
+                                                                    <div className="flex flex-wrap gap-2 mt-2">
+                                                                        {pkg.limit > 0 && (
+                                                                            <div className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full w-fit">
+                                                                                <Activity size={12} />
+                                                                                עד {pkg.limit.toLocaleString()}
+                                                                            </div>
+                                                                        )}
+                                                                         {pkg.isOneTime && (
+                                                                            <div className="flex items-center gap-1 text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded-full w-fit">
+                                                                                <Hammer size={12} />
+                                                                                חד-פעמי
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                                 <div className="text-right">
                                                                     <div className="font-bold text-lg">${pkg.price}</div>
@@ -743,15 +878,19 @@
                                                     <span className="font-bold text-slate-900">${totals.backboneTotal.toLocaleString()}</span>
                                                 </div>
 
-                                                <div className={`flex justify-between items-center p-3 rounded-lg border ${totals.aiCost > 0 ? 'bg-violet-50 border-violet-100 text-violet-900' : 'border-dashed border-slate-200 text-slate-400'}`}>
-                                                    <span className="flex items-center gap-2 font-medium">
-                                                        <Sparkles size={14} className={totals.aiCost > 0 ? "text-violet-600" : ""} /> 
-                                                        תוספת AI
-                                                    </span>
-                                                    <span className="font-bold">${totals.aiCost.toLocaleString()}</span>
-                                                </div>
+                                                {/* Only show AI here if it is Monthly */}
+                                                {totals.aiCostMRR > 0 && (
+                                                    <div className="flex justify-between items-center p-3 rounded-lg border bg-violet-50 border-violet-100 text-violet-900">
+                                                        <span className="flex items-center gap-2 font-medium">
+                                                            <Sparkles size={14} className="text-violet-600" /> 
+                                                            תוספת AI (חודשי)
+                                                        </span>
+                                                        <span className="font-bold">${totals.aiCostMRR.toLocaleString()}</span>
+                                                    </div>
+                                                )}
 
-                                                {totals.customBreakdown.map((item, idx) => (
+                                                {/* Only show Custom MRR here */}
+                                                {totals.customBreakdownMRR.map((item, idx) => (
                                                     <div key={idx} className="flex justify-between items-center p-3 rounded-lg border bg-white border-slate-200 text-slate-700">
                                                         <span className="flex items-center gap-2 font-medium text-xs">
                                                             <Puzzle size={14} className="text-slate-500" /> 
@@ -775,20 +914,37 @@
                                                     </div>
 
                                                     {/* SETUP COST SECTION */}
-                                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-100 mt-3">
+                                                    <div className="bg-orange-50 p-3 rounded-lg border border-orange-100 mt-3 space-y-2">
                                                         <div className="flex justify-between items-center mb-1">
                                                             <span className="text-xs font-bold text-orange-800 flex items-center gap-1">
                                                                 <Hammer size={12}/> עלות הקמה חד-פעמית
                                                             </span>
                                                             <span className="text-lg font-bold text-orange-700">${totals.totalSetupCost.toLocaleString()}</span>
                                                         </div>
-                                                        <div className="flex justify-between items-center text-[10px] text-orange-600/80 mb-2">
+                                                        
+                                                        {/* Show breakdowns for One-Time items */}
+                                                        {totals.aiCostSetup > 0 && (
+                                                            <div className="flex justify-between text-[10px] text-orange-800/80 px-2">
+                                                                <span>+ AI Setup</span>
+                                                                <span>${totals.aiCostSetup.toLocaleString()}</span>
+                                                            </div>
+                                                        )}
+                                                        {totals.customBreakdownSetup.map((item, idx) => (
+                                                            <div key={idx} className="flex justify-between text-[10px] text-orange-800/80 px-2">
+                                                                <span>+ {item.sectionName}: {item.pkgName}</span>
+                                                                <span>${item.price.toLocaleString()}</span>
+                                                            </div>
+                                                        ))}
+
+                                                        <div className="flex justify-between items-center text-[10px] text-orange-600/80 border-t border-orange-200 pt-1">
                                                             <span>(≈ {totals.setupCostNIS.toLocaleString(undefined, { maximumFractionDigits: 0 })} ₪)</span>
                                                         </div>
-                                                        <div className="flex items-center gap-2 text-xs text-orange-700 border-t border-orange-200 pt-2 mt-1">
-                                                            <Clock size={12}/>
-                                                            <span>זמן פרויקט משוער: <strong>{totals.totalSetupDays} ימי עבודה</strong></span>
-                                                        </div>
+                                                        {totals.totalSetupDays > 0 && (
+                                                            <div className="flex items-center gap-2 text-xs text-orange-700 border-t border-orange-200 pt-2 mt-1">
+                                                                <Clock size={12}/>
+                                                                <span>זמן פרויקט משוער: <strong>{totals.totalSetupDays} ימי עבודה</strong></span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>

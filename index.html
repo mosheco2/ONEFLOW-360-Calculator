@@ -5,128 +5,122 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ONEFLOW 360 PRO Calculator</title>
     
-    <!-- טעינת Tailwind CSS לעיצוב -->
+    <!-- טעינת ספריות חיצוניות (גרסה יציבה) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- הגדרת פונטים (Heebo) -->
+    <!-- פונטים -->
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    
     <style>
         body { 
             font-family: 'Heebo', sans-serif; 
+            background-color: #f8fafc;
+            color: #0f172a;
             -webkit-font-smoothing: antialiased;
         }
-        
-        /* הגדרות מיוחדות להדפסת PDF מקצועית */
-        @media print {
-            .no-print { display: none !important; }
-            .print-only { display: block !important; }
-            
-            body { 
-                background-color: white !important; 
-                padding: 0; 
-                margin: 0;
-                font-size: 12pt; /* גודל פונט בסיסי לקריאות */
-            }
-            
-            .bg-slate-50 { background-color: white !important; }
-            .shadow-xl, .shadow-2xl, .shadow-sm { box-shadow: none !important; border: none !important; }
-            
-            main { padding: 0 !important; max-width: 100% !important; margin: 0 !important; width: 100% !important; }
-            
-            /* מבנה העמוד בהדפסה */
-            .print-container {
-                width: 100%;
-                max-width: 210mm; /* רוחב A4 */
-                margin: 0 auto;
-                padding: 10mm;
-            }
 
-            /* מניעת דף ריק - ביטול מצב דביק וקבוע */
-            .sticky, .fixed, header { position: relative !important; top: 0 !important; width: 100% !important; box-shadow: none !important; }
-            
-            /* עיצוב כרטיס הסיכום בהדפסה */
-            .receipt-card { 
-                border: 2px solid #2563eb !important; 
-                width: 100% !important; 
-                margin-bottom: 30px !important; 
-                border-radius: 12px !important; 
-                page-break-inside: avoid;
-                box-shadow: none !important;
-            }
-            
-            .quote-header { 
-                display: flex !important; 
-                justify-content: space-between; 
-                align-items: center; 
-                border-bottom: 4px solid #2563eb; 
-                padding-bottom: 20px; 
-                margin-bottom: 30px; 
-            }
-
-            /* טיפוגרפיה להדפסה */
-            h1 { font-size: 24pt !important; font-weight: 900 !important; color: #1e293b !important; }
-            h2 { font-size: 20pt !important; font-weight: 800 !important; color: #1e293b !important; }
-            h3 { font-size: 16pt !important; font-weight: 700 !important; color: #1e293b !important; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 16px; }
-            h4 { font-size: 12pt !important; font-weight: 700 !important; color: #2563eb !important; }
-            p, li, span { font-size: 11pt !important; color: #334155 !important; }
-            
-            /* וידוא הדפסת צבעים */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        }
-        
-        .quote-header { display: none; }
-        .print-specification { display: none; } /* מוסתר במסך רגיל */
-        
+        /* התאמת סליידרים ל-RTL */
         input[type="range"] { direction: ltr; }
-    </style>
 
-    <!-- מפת ייבוא (Import Map) -->
-    <script type="importmap">
-    {
-        "imports": {
-            "react": "https://esm.sh/react@18.2.0",
-            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-            "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+        /* גלילה נעימה */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background-color: transparent; }
+
+        /* --- הגדרות הדפסה (PDF) משודרגות --- */
+        @media print {
+            @page { size: A4; margin: 10mm; }
+            body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            
+            /* הסתרת כל מה שלא קשור להדפסה */
+            .no-print, header, button, .admin-modal, .mobile-bar { display: none !important; }
+            
+            /* הצגת אזור ההדפסה בלבד */
+            #print-area { 
+                display: block !important; 
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                z-index: 9999;
+                background: white;
+            }
+
+            /* עיצוב טבלאות וכותרות להדפסה */
+            .print-container { padding: 0 10px; }
+            
+            h1 { font-size: 24pt !important; font-weight: 900 !important; color: #1e3a8a !important; margin: 0; }
+            .print-sub-header { color: #64748b !important; font-size: 11pt !important; }
+            
+            h2 { 
+                font-size: 16pt !important; 
+                font-weight: 800 !important; 
+                color: #1e293b !important; 
+                margin-top: 25px !important; 
+                margin-bottom: 10px !important; 
+                border-bottom: 2px solid #e2e8f0 !important;
+                padding-bottom: 5px !important;
+            }
+
+            /* טבלה נקייה */
+            table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 10pt; }
+            th { background-color: #f1f5f9 !important; padding: 8px; text-align: right; font-weight: 800; border: 1px solid #e2e8f0; }
+            td { padding: 8px; border: 1px solid #e2e8f0; vertical-align: top; }
+            
+            /* קופסאות סיכום */
+            .summary-box {
+                background-color: #f8fafc !important;
+                border: 2px solid #cbd5e1 !important;
+                border-radius: 12px;
+                padding: 15px;
+                break-inside: avoid;
+            }
+
+            .badge { 
+                border: 1px solid #ddd; 
+                padding: 2px 6px; 
+                border-radius: 4px; 
+                font-size: 8pt; 
+                font-weight: bold; 
+            }
         }
-    }
-    </script>
-
-    <!-- טעינת המנוע של Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        
+        /* הסתרת אזור ההדפסה במסך רגיל */
+        #print-area { display: none; }
+    </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-50">
     <div id="root"></div>
 
-    <!-- הקוד של האפליקציה -->
-    <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useMemo } from 'react';
-        import { createRoot } from 'react-dom/client';
-        import { 
-            Calculator, Settings, Users, Package, Activity, BrainCircuit, Check, 
-            Database, BarChart3, Truck, ShoppingCart, Mail, Megaphone, Briefcase, 
-            Layers, Sparkles, Save, RotateCcw, Plus, Trash2, X, Puzzle, 
-            Headphones, Globe, Shield, Zap, Type, Coins, Hammer, Clock, Calendar, FileText, CheckCircle2
-        } from 'lucide-react';
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
 
-        // --- Icon Mapping ---
-        const AVAILABLE_ICONS = {
-            ShoppingCart, Package, Layers, Truck, Megaphone, Mail, Briefcase, BarChart3,
-            Activity, BrainCircuit, Users, Database, Puzzle, Headphones, Globe, Shield, Zap, Coins, Hammer, Clock, Calendar
+        // רכיב אייקון דינמי
+        const Icon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [name]); 
+            return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
-        const IconComponent = ({ name, size = 20, className = "" }) => {
-            const LucideIcon = AVAILABLE_ICONS[name] || Package;
-            return <LucideIcon size={size} className={className} />;
-        };
+        // רשימת אייקונים מורחבת לבחירה
+        const ICON_LIST = [
+            'shopping-cart', 'package', 'layers', 'truck', 'megaphone', 'mail', 'briefcase', 'bar-chart-3',
+            'activity', 'users', 'puzzle', 'globe', 'shield', 'zap', 'coins', 'hammer', 'clock', 'calendar',
+            'database', 'settings', 'check-circle-2', 'file-text', 'server', 'smartphone', 'wifi', 'box'
+        ];
 
-        // --- Default Configuration ---
+        // --- נתוני ברירת מחדל ---
         const DEFAULT_CONFIG = {
             basePricePerModule: 100,
             basePricePerUser: 45,
             exchangeRate: 3.7, 
             setupHourlyRate: 350,
             setupHoursPerDay: 9,
-            
             uiText: {
                 modulesHeader: "רכיב א': מודולים פעילים",
                 usersHeader: "רכיב ב': משתמשים",
@@ -134,14 +128,14 @@
                 aiHeader: "רכיב ד': כוח AI",
             },
             modules: [
-                { id: 'sales', name: 'מכירות', icon: 'ShoppingCart', setupDays: 3 },
-                { id: 'inventory', name: 'מלאי', icon: 'Package', setupDays: 5 },
-                { id: 'picking', name: 'ליקוט', icon: 'Layers', setupDays: 4 },
-                { id: 'shipping', name: 'שילוח', icon: 'Truck', setupDays: 2 },
-                { id: 'marketing', name: 'שיווק', icon: 'Megaphone', setupDays: 2 },
-                { id: 'mailing', name: 'דיוור', icon: 'Mail', setupDays: 1 },
-                { id: 'opportunities', name: 'הזדמנויות', icon: 'Briefcase', setupDays: 3 },
-                { id: 'bi', name: 'BI & דוחות', icon: 'BarChart3', setupDays: 5 },
+                { id: 'sales', name: 'מכירות', icon: 'shopping-cart', setupDays: 3 },
+                { id: 'inventory', name: 'מלאי', icon: 'package', setupDays: 5 },
+                { id: 'picking', name: 'ליקוט', icon: 'layers', setupDays: 4 },
+                { id: 'shipping', name: 'שילוח', icon: 'truck', setupDays: 2 },
+                { id: 'marketing', name: 'שיווק', icon: 'megaphone', setupDays: 2 },
+                { id: 'mailing', name: 'דיוור', icon: 'mail', setupDays: 1 },
+                { id: 'opportunities', name: 'הזדמנויות', icon: 'briefcase', setupDays: 3 },
+                { id: 'bi', name: 'BI & דוחות', icon: 'bar-chart-3', setupDays: 5 },
             ],
             tiers: [
                 { id: 'S', name: 'Tier S (Basic)', limit: 200, price: 150 },
@@ -150,482 +144,591 @@
                 { id: 'ENT', name: 'Tier ENT', limit: 15000, price: 3000 },
             ],
             aiPackages: [
-                { id: 'none', name: 'ללא AI', price: 0, description: 'תשתית בלבד', limit: 0 },
-                { id: 'starter', name: 'AI Starter', price: 199, description: 'חיזוי בסיסי', limit: 500 },
-                { id: 'pro', name: 'AI Pro', price: 550, description: 'אופטימיזציה בזמן אמת', limit: 2500 },
-                { id: 'ultra', name: 'AI Ultra', price: 1200, description: 'סוכן מלא + שרשרת אספקה', limit: 10000 },
+                { id: 'none', name: 'ללא AI', price: 0, description: 'תשתית בלבד', limit: 0, isOneTime: false },
+                { id: 'starter', name: 'AI Starter', price: 199, description: 'חיזוי בסיסי', limit: 500, isOneTime: false },
+                { id: 'pro', name: 'AI Pro', price: 550, description: 'אופטימיזציה בזמן אמת', limit: 2500, isOneTime: false },
+                { id: 'ultra', name: 'AI Ultra', price: 1200, description: 'סוכן מלא + שרשרת אספקה', limit: 10000, isOneTime: false },
             ],
             customSections: [] 
         };
 
-        // --- Main App Component ---
         function App() {
-            // --- State ---
-            const STORAGE_KEY = 'oneflow_calc_v_final_v11'; 
+            const STORAGE_KEY = 'oneflow_pro_full_v1_fixed_summary';
 
-            // Load config
+            // --- State ---
             const [config, setConfig] = useState(() => {
                 try {
-                    const savedConfig = localStorage.getItem(STORAGE_KEY);
-                    if (savedConfig) {
-                        const parsed = JSON.parse(savedConfig);
-                        return { 
-                            ...DEFAULT_CONFIG, 
-                            ...parsed,
-                            modules: parsed.modules.map(m => ({
-                                ...DEFAULT_CONFIG.modules.find(dm => dm.id === m.id) || {},
-                                ...m,
-                                setupDays: m.setupDays !== undefined ? m.setupDays : (DEFAULT_CONFIG.modules.find(dm => dm.id === m.id)?.setupDays || 0)
-                            }))
-                        };
-                    }
-                    return DEFAULT_CONFIG;
-                } catch (error) {
-                    return DEFAULT_CONFIG;
-                }
+                    const saved = localStorage.getItem(STORAGE_KEY);
+                    return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+                } catch { return DEFAULT_CONFIG; }
             });
+
+            // נתוני הצעת מחיר
+            const [clientName, setClientName] = useState('');
+            const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split('T')[0]);
             
-            // Selections
+            // בחירות המשתמש
             const [selectedModules, setSelectedModules] = useState(['sales', 'inventory', 'bi']);
             const [userCount, setUserCount] = useState(5);
             const [selectedTier, setSelectedTier] = useState('S');
             const [selectedAI, setSelectedAI] = useState('none');
             const [customSelections, setCustomSelections] = useState({});
-
+            
             // UI
             const [isAdminOpen, setIsAdminOpen] = useState(false);
             const [showSummary, setShowSummary] = useState(false);
-            
-            // Admin UI State
-            const [newModule, setNewModule] = useState({ name: '', icon: 'Package', setupDays: 0 });
-            const [newSection, setNewSection] = useState({ title: '' });
+            const [iconPickerOpen, setIconPickerOpen] = useState(null); 
 
-            // Save to localStorage
+            // Admin Inputs
+            const [newModule, setNewModule] = useState({ name: '', icon: 'package', setupDays: 0 });
+            const [newSectionTitle, setNewSectionTitle] = useState('');
+
+            // Persistence
             useEffect(() => {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-            }, [config]);
+                if(window.lucide) window.lucide.createIcons();
+            }, [config, selectedModules, isAdminOpen]);
 
-            // --- Calculations ---
+            // --- Calculation Logic ---
             const totals = useMemo(() => {
                 const modulesCost = selectedModules.length * config.basePricePerModule;
                 const usersCost = userCount * config.basePricePerUser;
-                const tierCost = config.tiers.find(t => t.id === selectedTier)?.price || 0;
-                const aiCost = config.aiPackages.find(a => a.id === selectedAI)?.price || 0;
+                const tierObj = config.tiers.find(t => t.id === selectedTier) || config.tiers[0];
+                const backboneTotal = modulesCost + usersCost + tierObj.price;
 
-                let customSectionsCost = 0;
-                const customBreakdown = [];
-                config.customSections.forEach(section => {
-                    const selectedId = customSelections[section.id];
-                    if (selectedId) {
-                        const pkg = section.packages.find(p => p.id === selectedId);
-                        if (pkg && pkg.price > 0) {
-                            customSectionsCost += pkg.price;
-                            customBreakdown.push({ sectionName: section.title, pkgName: pkg.name, price: pkg.price });
+                let addonsMRR = 0;
+                let addonsSetup = 0;
+                const mrrBreakdown = []; // למערך פירוט
+                
+                // AI
+                const aiObj = config.aiPackages.find(a => a.id === selectedAI) || config.aiPackages[0];
+                if(aiObj.price > 0) {
+                    if(aiObj.isOneTime) {
+                        addonsSetup += aiObj.price;
+                    } else {
+                        addonsMRR += aiObj.price;
+                        mrrBreakdown.push({ label: `AI: ${aiObj.name}`, price: aiObj.price });
+                    }
+                }
+
+                // Custom Sections
+                const customItems = [];
+                config.customSections.forEach(sec => {
+                    const pkgId = customSelections[sec.id];
+                    const pkg = sec.packages.find(p => p.id === pkgId);
+                    if(pkg && pkg.price > 0) {
+                        if(pkg.isOneTime) {
+                            addonsSetup += pkg.price;
+                        } else {
+                            addonsMRR += pkg.price;
+                            mrrBreakdown.push({ label: `${sec.title}: ${pkg.name}`, price: pkg.price });
                         }
+                        customItems.push({ ...pkg, sectionTitle: sec.title });
                     }
                 });
 
+                // Setup Days Calculation
                 let totalSetupDays = 0;
-                config.modules.forEach(m => {
-                    if (selectedModules.includes(m.id)) {
-                        totalSetupDays += Number(m.setupDays || 0);
-                    }
-                });
-                const totalSetupCost = totalSetupDays * (config.setupHourlyRate * config.setupHoursPerDay);
+                const selectedModulesList = config.modules.filter(m => selectedModules.includes(m.id));
+                selectedModulesList.forEach(m => totalSetupDays += Number(m.setupDays || 0));
+                
+                const setupLaborCost = totalSetupDays * config.setupHourlyRate * config.setupHoursPerDay;
+                const totalSetup = setupLaborCost + addonsSetup;
+                const totalMRR = backboneTotal + addonsMRR;
 
-                const backboneTotal = modulesCost + usersCost + tierCost;
-                const totalMRR = backboneTotal + aiCost + customSectionsCost;
-                const totalNIS = totalMRR * config.exchangeRate;
-                const setupCostNIS = totalSetupCost * config.exchangeRate;
-
-                return { 
-                    modulesCost, usersCost, tierCost, aiCost, backboneTotal, totalMRR, totalNIS, 
-                    customSectionsCost, customBreakdown,
-                    totalSetupDays, totalSetupCost, setupCostNIS
+                return {
+                    modulesCost, usersCost, tierObj, backboneTotal,
+                    addonsMRR, addonsSetup, customItems, aiObj, mrrBreakdown, // Added mrrBreakdown to return
+                    totalSetupDays, setupLaborCost, totalSetup, totalMRR,
+                    selectedModulesList,
+                    nisMRR: totalMRR * config.exchangeRate,
+                    nisSetup: totalSetup * config.exchangeRate
                 };
             }, [config, selectedModules, userCount, selectedTier, selectedAI, customSelections]);
 
-            // --- Handlers ---
-            const handleCreatePDF = () => {
-                window.print();
+
+            const handlePrint = () => window.print();
+            const toggleModule = (id) => setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
+            
+            // --- Admin Helpers ---
+            const updateConfigValue = (path, val) => {
+               const newConfig = JSON.parse(JSON.stringify(config));
+               let current = newConfig;
+               for(let i=0; i<path.length-1; i++) current = current[path[i]];
+               current[path[path.length-1]] = val;
+               setConfig(newConfig);
             };
 
-            const handleConfigChange = (section, index, field, value) => {
-                const newConfig = { ...config };
-                if (section === 'base') {
-                    newConfig[field] = Number(value);
-                } else {
-                    newConfig[section][index][field] = (field === 'price' || field === 'limit' || field === 'setupDays') ? Number(value) : value;
-                }
-                setConfig(newConfig);
+            const addNewModule = () => {
+                if(!newModule.name) return;
+                const id = "mod_" + Date.now();
+                setConfig(prev => ({ ...prev, modules: [...prev.modules, { ...newModule, id, setupDays: Number(newModule.setupDays) }] }));
+                setNewModule({ name: '', icon: 'package', setupDays: 0 });
             };
 
-            const addModule = () => {
-                if (!newModule.name) return;
-                const id = `mod_${Date.now()}`;
-                setConfig(prev => ({ ...prev, modules: [...prev.modules, { id, ...newModule, setupDays: Number(newModule.setupDays) }] }));
-                setNewModule({ name: '', icon: 'Package', setupDays: 0 });
+            const addNewSection = () => {
+                if(!newSectionTitle) return;
+                const id = "sec_" + Date.now();
+                setConfig(prev => ({ ...prev, customSections: [...prev.customSections, { id, title: newSectionTitle, packages: [{ id: id+'_0', name: 'לא נבחר', price: 0, isOneTime: false }] }] }));
+                setNewSectionTitle('');
             };
 
-            const addCustomSection = () => {
-                if (!newSection.title) return;
-                const id = `sec_${Date.now()}`;
-                setConfig(prev => ({ 
-                    ...prev, 
-                    customSections: [...prev.customSections, { 
-                        id, 
-                        title: newSection.title, 
-                        packages: [{ id: `${id}_0`, name: 'לא נבחר', price: 0, limit: 0 }] 
-                    }] 
-                }));
-                setNewSection({ title: '' });
-            };
-
-            const resetConfig = () => {
-                if (confirm('לאפס נתונים לברירת מחדל?')) {
-                    localStorage.removeItem(STORAGE_KEY);
-                    setConfig(DEFAULT_CONFIG);
-                    setCustomSelections({});
-                }
-            };
-
-            const toggleModule = (id) => {
-                setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
-            };
-
+            // --- Render Components ---
             const ModuleButton = ({ module, isSelected }) => (
-                <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md scale-[1.02]' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50'}`}>
-                    <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}><IconComponent name={module.icon} size={24} /></div>
+                <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
+                    <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}><Icon name={module.icon} size={24} /></div>
                     <span className="text-sm font-bold">{module.name}</span>
                     {module.setupDays > 0 && <span className="text-[10px] text-slate-400 mt-1">{module.setupDays} ימי הקמה</span>}
-                    {isSelected && <div className="absolute top-2 right-2"><CheckCircle2 size={16} className="text-blue-600 fill-white" /></div>}
+                    {isSelected && <div className="absolute top-2 right-2 text-blue-600"><Icon name="check-circle-2" size={16} /></div>}
                 </button>
             );
 
             return (
                 <div dir="rtl" className="min-h-screen bg-slate-50">
-                    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 no-print shadow-sm">
-                        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-200">1</div>
-                                <h1 className="text-xl font-bold tracking-tight text-slate-900 underline decoration-blue-500 decoration-4 underline-offset-4">ONEFLOW <span className="text-blue-600">360 PRO</span></h1>
-                            </div>
-                            <button onClick={() => setIsAdminOpen(!isAdminOpen)} className={`p-2.5 rounded-full transition-all ${isAdminOpen ? 'bg-blue-100 text-blue-700 shadow-inner' : 'bg-slate-50 text-slate-400 hover:text-slate-600 hover:bg-white border'}`}>
-                                <Settings size={22} />
-                            </button>
+                    
+                    {/* Header */}
+                    <header className="no-print sticky top-0 z-50 bg-white border-b shadow-sm h-16 flex items-center justify-between px-6">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-xl">1</div>
+                            <h1 className="text-xl font-bold">ONEFLOW <span className="text-blue-600">360 PRO</span></h1>
+                        </div>
+                        <div className="flex items-center gap-3">
+                             <input type="text" placeholder="שם הלקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm w-48 bg-slate-50" />
+                             <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm bg-slate-50" />
+                            <button onClick={() => setIsAdminOpen(true)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-600"><Icon name="settings" /></button>
                         </div>
                     </header>
 
-                    {/* PDF Header - גלוי רק בהדפסה */}
-                    <div className="quote-header px-10 pt-10">
-                        <div className="flex-1">
-                            <h1 className="text-4xl font-black text-slate-900 tracking-tighter">הצעת מחיר למערכת ONEFLOW PRO</h1>
-                            <p className="text-lg text-slate-500 mt-2 font-bold">תאריך הפקה: {new Date().toLocaleDateString('he-IL')}</p>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-3xl font-black text-blue-600 mb-1">ONEBTN</div>
-                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest leading-none">Digital Backbone Solutions</p>
-                        </div>
-                    </div>
+                    {/* Main Interface */}
+                    <main className="no-print max-w-7xl mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8">
+                        
+                        {/* Center Column - Configurator */}
+                        <div className="flex-grow space-y-8 pb-24">
+                            
+                            {/* Mobile Inputs */}
+                            <div className="md:hidden space-y-2">
+                                <input type="text" placeholder="שם הלקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="w-full p-3 border rounded-xl" />
+                                <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="w-full p-3 border rounded-xl" />
+                            </div>
 
-                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                        {isAdminOpen ? (
-                            /* --- ממשק ניהול מלא --- */
-                            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 no-print animate-in fade-in slide-in-from-top-4">
-                                <div className="flex justify-between items-center mb-8 border-b pb-4">
-                                    <h2 className="text-2xl font-black flex items-center gap-3"><Settings className="text-blue-600" /> ניהול מערכת ותמחור</h2>
-                                    <button onClick={resetConfig} className="text-sm text-red-600 font-bold hover:underline flex items-center gap-1 border border-red-100 px-3 py-1 rounded-lg hover:bg-red-50 transition-all"><RotateCcw size={14} /> איפוס נתוני בסיס</button>
+                            {/* Modules */}
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="database" className="text-blue-500"/> {config.uiText.modulesHeader}</h3>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                    {config.modules.map(m => <ModuleButton key={m.id} module={m} isSelected={selectedModules.includes(m.id)} />)}
                                 </div>
+                            </section>
 
-                                <div className="space-y-12">
-                                    {/* הגדרות בסיס */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-xs font-bold uppercase tracking-wide">
-                                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                                            <h3 className="text-sm font-black text-slate-700 mb-4 border-r-4 border-blue-600 pr-3">בסיס ושער המרה</h3>
-                                            <div className="grid grid-cols-3 gap-4">
-                                                <div><label className="block mb-2">מודול ($)</label><input type="number" value={config.basePricePerModule} onChange={e => handleConfigChange('base', null, 'basePricePerModule', e.target.value)} className="w-full p-2 border rounded-lg focus:ring-2 ring-blue-100 outline-none" /></div>
-                                                <div><label className="block mb-2">משתמש ($)</label><input type="number" value={config.basePricePerUser} onChange={e => handleConfigChange('base', null, 'basePricePerUser', e.target.value)} className="w-full p-2 border rounded-lg focus:ring-2 ring-blue-100 outline-none" /></div>
-                                                <div><label className="block mb-2 text-blue-600 font-black italic">שער דולר (₪)</label><input type="number" step="0.1" value={config.exchangeRate} onChange={e => handleConfigChange('base', null, 'exchangeRate', e.target.value)} className="w-full p-2 border border-blue-200 rounded-lg bg-blue-50 focus:ring-2 ring-blue-200 outline-none" /></div>
-                                            </div>
-                                        </div>
-                                        <div className="bg-orange-50 p-6 rounded-2xl border border-orange-200">
-                                            <h3 className="text-sm font-black text-orange-800 mb-4 border-r-4 border-orange-600 pr-3">עלויות פרויקט</h3>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div><label className="block mb-2">תעריף שעה ($)</label><input type="number" value={config.setupHourlyRate} onChange={e => handleConfigChange('base', null, 'setupHourlyRate', e.target.value)} className="w-full p-2 border rounded-lg focus:ring-2 ring-orange-100 outline-none" /></div>
-                                                <div><label className="block mb-2">שעות ביום</label><input type="number" value={config.setupHoursPerDay} onChange={e => handleConfigChange('base', null, 'setupHoursPerDay', e.target.value)} className="w-full p-2 border rounded-lg focus:ring-2 ring-orange-100 outline-none" /></div>
-                                            </div>
-                                        </div>
-                                    </div>
+                            {/* Users */}
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold flex items-center gap-2 text-slate-700"><Icon name="users" className="text-blue-500"/> {config.uiText.usersHeader}</h3>
+                                    <span className="text-3xl font-black text-slate-900">{userCount}</span>
+                                </div>
+                                <input type="range" min="1" max="100" value={userCount} onChange={e => setUserCount(Number(e.target.value))} className="w-full h-3 bg-slate-200 rounded-lg cursor-pointer accent-blue-600" />
+                            </section>
 
-                                    {/* עריכת מודולים */}
-                                    <div>
-                                        <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-3"><Database className="text-blue-500" size={24}/> ניהול מודולים ותצורת פרויקט</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                                            {config.modules.map((m, idx) => (
-                                                <div key={m.id} className="flex items-center gap-3 bg-white p-3 border rounded-xl shadow-sm hover:border-blue-200 transition-all">
-                                                    <select value={m.icon} onChange={e => handleConfigChange('modules', idx, 'icon', e.target.value)} className="p-1.5 border rounded-lg text-xs bg-slate-50 cursor-pointer">
-                                                        {Object.keys(AVAILABLE_ICONS).map(icon => <option key={icon} value={icon}>{icon}</option>)}
-                                                    </select>
-                                                    <input value={m.name} onChange={e => handleConfigChange('modules', idx, 'name', e.target.value)} className="flex-grow p-1.5 text-sm font-bold border-b border-transparent focus:border-blue-500 outline-none" />
-                                                    <div className="flex items-center gap-1">
-                                                        <span className="text-[10px] font-bold text-slate-400">ימים:</span>
-                                                        <input type="number" value={m.setupDays} onChange={e => handleConfigChange('modules', idx, 'setupDays', e.target.value)} className="w-12 p-1 text-sm border rounded-lg text-center font-black bg-slate-50" />
-                                                    </div>
-                                                    <button onClick={() => setConfig({...config, modules: config.modules.filter(x => x.id !== m.id)})} className="text-red-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="flex gap-3 p-4 bg-slate-100/50 rounded-2xl border-2 border-dashed border-slate-300 items-end">
-                                            <div className="flex-grow">
-                                                <label className="text-[10px] text-slate-500 block mb-1 font-black uppercase tracking-widest">שם מודול חדש</label>
-                                                <input value={newModule.name} onChange={e => setNewModule({...newModule, name: e.target.value})} className="w-full p-2 border rounded-xl text-sm" placeholder="למשל: ניהול מלאי מתקדם" />
-                                            </div>
-                                            <div className="w-24">
-                                                <label className="text-[10px] text-slate-500 block mb-1 font-black uppercase tracking-widest">ימי הקמה</label>
-                                                <input type="number" value={newModule.setupDays} onChange={e => setNewModule({...newModule, setupDays: Number(e.target.value)})} className="w-full p-2 border rounded-xl text-sm font-bold text-center" />
-                                            </div>
-                                            <button onClick={addModule} className="bg-blue-600 text-white p-2.5 rounded-xl px-5 text-sm font-black shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">+ הוסף מודול</button>
-                                        </div>
-                                    </div>
+                            {/* Tiers */}
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="activity" className="text-blue-500"/> {config.uiText.tiersHeader}</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                                    {config.tiers.map(t => (
+                                        <button key={t.id} onClick={() => setSelectedTier(t.id)} className={`p-4 rounded-2xl border-2 text-right transition-all ${selectedTier === t.id ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-100 hover:border-slate-200'}`}>
+                                            <div className="font-bold text-slate-700 text-sm">{t.name}</div>
+                                            <div className="text-[10px] text-slate-400 mb-2">עד {t.limit.toLocaleString()}</div>
+                                            <div className="text-xl font-black text-slate-900">${t.price}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
 
-                                    {/* עריכת AI */}
-                                    <div>
-                                        <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-3"><Sparkles className="text-violet-600" size={24}/> עריכת חבילות AI</h3>
-                                        <div className="space-y-2">
-                                            {config.aiPackages.map((pkg, idx) => (
-                                                <div key={pkg.id} className="grid grid-cols-12 gap-3 items-center bg-white p-3 border rounded-2xl shadow-sm">
-                                                    <input value={pkg.name} onChange={e => handleConfigChange('aiPackages', idx, 'name', e.target.value)} className="col-span-3 p-1.5 text-sm border rounded-lg font-black" />
-                                                    <input value={pkg.description} onChange={e => handleConfigChange('aiPackages', idx, 'description', e.target.value)} className="col-span-5 p-1.5 text-xs border rounded-lg italic" />
-                                                    <div className="col-span-2 flex items-center gap-1">
-                                                        <span className="text-[10px] font-bold text-slate-400">$</span>
-                                                        <input type="number" value={pkg.price} onChange={e => handleConfigChange('aiPackages', idx, 'price', e.target.value)} className="w-full p-1.5 text-sm border rounded-lg font-black bg-slate-50" />
-                                                    </div>
-                                                    <input type="number" value={pkg.limit} onChange={e => handleConfigChange('aiPackages', idx, 'limit', e.target.value)} className="col-span-2 p-1.5 text-sm border rounded-lg text-center" placeholder="מגבלה" />
+                            {/* AI */}
+                            <section className="p-6 rounded-3xl border-2 border-violet-100 bg-gradient-to-br from-white to-violet-50/50">
+                                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-violet-900"><Icon name="sparkles" className="text-violet-600"/> {config.uiText.aiHeader}</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {config.aiPackages.map(pkg => (
+                                        <button key={pkg.id} onClick={() => setSelectedAI(pkg.id)} className={`p-5 rounded-2xl border transition-all text-right ${selectedAI === pkg.id ? 'border-violet-600 bg-white shadow-lg' : 'border-slate-200/60 bg-white/60 hover:bg-white'}`}>
+                                            <div className="flex justify-between items-start">
+                                                <span className="font-bold text-violet-800">{pkg.name}</span>
+                                                <span className="font-black text-lg">${pkg.price}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-1">{pkg.description}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+
+                            {/* Custom Sections */}
+                            {config.customSections.map(sec => (
+                                <section key={sec.id} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="puzzle" className="text-blue-500"/> {sec.title}</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {sec.packages.map(pkg => (
+                                            <button key={pkg.id} onClick={() => setCustomSelections({...customSelections, [sec.id]: pkg.id})} className={`p-4 rounded-2xl border-2 transition-all flex justify-between items-center ${customSelections[sec.id] === pkg.id ? 'border-blue-600 bg-blue-50' : 'border-slate-100'}`}>
+                                                <div className="text-right">
+                                                    <div className="font-bold text-slate-800">{pkg.name}</div>
+                                                    {pkg.isOneTime && <span className="text-[10px] bg-orange-50 text-orange-600 px-2 rounded font-bold">חד-פעמי</span>}
                                                 </div>
-                                            ))}
-                                        </div>
+                                                <div className="text-xl font-black text-slate-900">${pkg.price}</div>
+                                            </button>
+                                        ))}
                                     </div>
-                                    
-                                    {/* מחולל אזורים */}
-                                    <div className="pt-8 border-t">
-                                        <h3 className="text-lg font-black text-purple-700 mb-4 flex items-center gap-3"><Puzzle size={24}/> מחולל אזורי תמחור ושירותים נוספים</h3>
-                                        {config.customSections.map((sec, sIdx) => (
-                                            <div key={sec.id} className="mb-6 p-6 border-2 border-purple-100 rounded-[2rem] bg-purple-50/30 relative">
-                                                <div className="flex justify-between items-center mb-5">
-                                                    <input value={sec.title} onChange={e => {const c = {...config}; c.customSections[sIdx].title = e.target.value; setConfig(c);}} className="text-xl font-black bg-transparent border-b-2 border-purple-200 outline-none text-purple-900 focus:border-purple-500" />
-                                                    <button onClick={() => {const c = {...config}; c.customSections.splice(sIdx,1); setConfig(c);}} className="text-red-400 font-bold text-xs underline decoration-2 underline-offset-4">מחק אזור שלם</button>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    {sec.packages.map((pkg, pIdx) => (
-                                                        <div key={pkg.id} className="grid grid-cols-12 gap-3 items-center bg-white p-2 rounded-xl border border-purple-100 shadow-sm">
-                                                            <input value={pkg.name} onChange={e => {const c = {...config}; c.customSections[sIdx].packages[pIdx].name = e.target.value; setConfig(c);}} className="col-span-6 p-1.5 text-sm border-none font-bold" placeholder="שם חבילה" />
-                                                            <div className="col-span-4 flex items-center gap-1">
-                                                                <span className="text-[10px] font-bold text-purple-400">$</span>
-                                                                <input type="number" value={pkg.price} onChange={e => {const c = {...config}; c.customSections[sIdx].packages[pIdx].price = Number(e.target.value); setConfig(c);}} className="w-full p-1.5 text-sm border rounded-lg font-black bg-purple-50/50" />
-                                                            </div>
-                                                            <button onClick={() => {const c = {...config}; c.customSections[sIdx].packages.splice(pIdx,1); setConfig(c);}} className="col-span-2 text-red-300 hover:text-red-500 font-black">X</button>
-                                                        </div>
-                                                    ))}
-                                                    <button onClick={() => {const c = {...config}; c.customSections[sIdx].packages.push({id:Date.now(), name:'חבילה חדשה', price:0}); setConfig(c);}} className="text-[11px] font-black text-purple-600 underline mt-3 flex items-center gap-1">+ הוסף אפשרות בחירה</button>
-                                                </div>
+                                </section>
+                            ))}
+                        </div>
+
+                        {/* Sidebar Summary - Fixed/Sticky Logic */}
+                        <div className={`lg:w-96 flex-shrink-0 ${showSummary ? 'fixed inset-0 z-50 bg-white p-6 overflow-y-auto' : 'hidden lg:block'}`}>
+                             {showSummary && <button onClick={() => setShowSummary(false)} className="absolute top-4 left-4 p-2 bg-slate-100 rounded-full"><Icon name="x"/></button>}
+                             
+                             <div className="lg:sticky lg:top-24 bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden">
+                                <div className="bg-slate-900 text-white p-8">
+                                    <h2 className="text-2xl font-black uppercase tracking-tight">סיכום הצעה</h2>
+                                </div>
+                                <div className="p-8 space-y-6">
+                                    {/* Monthly Breakdown */}
+                                    <div className="space-y-3 pb-6 border-b border-dashed border-slate-200 text-sm">
+                                        <div className="flex justify-between font-bold text-slate-600"><span>תשתית ומודולים</span><span>${totals.backboneTotal.toLocaleString()}</span></div>
+                                        
+                                        {/* תוספות חודשיות - כאן הפירוט שביקשת! */}
+                                        {totals.mrrBreakdown.map((item, i) => (
+                                            <div key={i} className="flex justify-between text-blue-600 font-bold bg-blue-50 p-2 rounded">
+                                                <span>{item.label}</span>
+                                                <span>${item.price.toLocaleString()}</span>
                                             </div>
                                         ))}
-                                        <div className="flex gap-3 max-w-2xl">
-                                            <input value={newSection.title} onChange={e => setNewSection({title: e.target.value})} placeholder="שם אזור שירות חדש (תמיכה, אינטגרציות, חבילות פרסום...)" className="flex-grow p-3 border border-purple-200 rounded-2xl text-sm bg-white shadow-inner" />
-                                            <button onClick={addCustomSection} className="bg-purple-600 text-white px-8 rounded-2xl text-sm font-black shadow-xl hover:bg-purple-700 transition-all">צור אזור תמחור</button>
+                                    </div>
+
+                                    {/* Total MRR */}
+                                    <div>
+                                        <div className="flex justify-between items-end mb-1">
+                                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">חודשי קבוע (MRR)</span>
+                                            <span className="text-4xl font-black text-slate-900 leading-none">${totals.totalMRR.toLocaleString()}</span>
+                                        </div>
+                                        <div className="text-left text-xs font-bold text-slate-400">≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
+                                    </div>
+
+                                    {/* Setup Cost */}
+                                    <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-xs font-black text-orange-800 uppercase tracking-wide">הקמה חד-פעמית</span>
+                                            <span className="text-2xl font-black text-orange-700">${totals.totalSetup.toLocaleString()}</span>
+                                        </div>
+                                        <div className="text-left text-[10px] text-orange-600 font-bold mb-3 border-t border-orange-200 pt-2">≈ {Math.round(totals.nisSetup).toLocaleString()} ₪</div>
+                                        <div className="flex items-center gap-2 text-xs font-black text-orange-800 bg-white/50 p-2 rounded-lg">
+                                            <Icon name="clock" size={16}/> <span>זמן משוער: {totals.totalSetupDays} ימי עבודה</span>
                                         </div>
                                     </div>
-                                </div>
-                                <button onClick={() => setIsAdminOpen(false)} className="w-full mt-12 py-4 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:bg-black transition-all flex items-center justify-center gap-3">
-                                   <Save size={24} /> שמור שינויים ועדכן מחשבון
-                                </button>
-                            </div>
-                        ) : (
-                            /* --- מחשבון משתמש --- */
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                                <div className="lg:col-span-8 space-y-10 pb-24 lg:pb-0">
-                                    {/* בחירת מודולים - מוסתר בהדפסה */}
-                                    <section className="bg-white rounded-[2.5rem] p-10 border shadow-sm relative overflow-hidden no-print">
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
-                                        <div className="flex justify-between items-center mb-8 relative z-10">
-                                            <h3 className="text-2xl font-black flex items-center gap-4 text-slate-800"><Database className="text-blue-500" size={32} /> {config.uiText.modulesHeader}</h3>
-                                            <span className="text-sm font-black text-blue-600 bg-blue-50 px-4 py-1.5 rounded-full border border-blue-100">{selectedModules.length} רכיבים פעילים</span>
-                                        </div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 relative z-10">
-                                            {config.modules.map(m => <ModuleButton key={m.id} module={m} isSelected={selectedModules.includes(m.id)} />)}
-                                        </div>
-                                    </section>
 
-                                    {/* בחירת משתמשים - מוסתר בהדפסה */}
-                                    <section className="bg-white rounded-[2.5rem] p-10 border shadow-sm no-print">
-                                        <div className="flex justify-between items-center mb-10">
-                                            <h3 className="text-2xl font-black flex items-center gap-4 text-slate-800"><Users className="text-blue-500" size={32} /> {config.uiText.usersHeader}</h3>
-                                            <div className="text-5xl font-black text-slate-900 tracking-tighter tabular-nums">{userCount}</div>
-                                        </div>
-                                        <input type="range" min="1" max="100" value={userCount} onChange={e => setUserCount(Number(e.target.value))} className="w-full h-3 bg-slate-100 rounded-full appearance-none cursor-pointer accent-blue-600" />
-                                        <div className="flex justify-between mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                            <span>1 משתמש</span>
-                                            <span>100 משתמשים</span>
-                                        </div>
-                                    </section>
-
-                                    {/* חבילת טרנזקציות - מוסתר בהדפסה */}
-                                    <section className="bg-white rounded-[2.5rem] p-10 border shadow-sm no-print">
-                                        <h3 className="text-2xl font-black flex items-center gap-4 mb-10 text-slate-800"><Activity className="text-blue-500" size={32} /> {config.uiText.tiersHeader}</h3>
-                                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-5">
-                                            {config.tiers.map(t => (
-                                                <div key={t.id} onClick={() => setSelectedTier(t.id)} className={`cursor-pointer rounded-3xl p-6 border-2 transition-all group ${selectedTier === t.id ? 'border-blue-600 bg-blue-50 shadow-xl scale-[1.05]' : 'border-slate-100 hover:border-slate-300'}`}>
-                                                    <div className="font-black text-sm text-slate-700 mb-1 group-hover:text-blue-600 transition-colors">{t.name}</div>
-                                                    <div className="text-xs text-slate-400 mb-4 font-bold">עד {t.limit.toLocaleString()} פעולות</div>
-                                                    <div className="text-3xl font-black text-slate-900">${t.price}</div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </section>
-
-                                    {/* חבילת AI - מוסתר בהדפסה */}
-                                    <section className="rounded-[2.5rem] p-10 border-2 border-violet-100 bg-gradient-to-br from-white to-violet-50/30 no-print">
-                                        <div className="flex items-center gap-4 mb-10">
-                                            <div className="p-3 bg-violet-600 text-white rounded-2xl shadow-lg shadow-violet-200">
-                                                <Sparkles size={32} />
-                                            </div>
-                                            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{config.uiText.aiHeader}</h3>
-                                        </div>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                            {config.aiPackages.map(pkg => (
-                                                <div key={pkg.id} onClick={() => setSelectedAI(pkg.id)} className={`cursor-pointer rounded-3xl p-8 border-2 transition-all ${selectedAI === pkg.id ? 'border-violet-600 bg-white shadow-2xl ring-4 ring-violet-50 scale-[1.03]' : 'border-slate-200 bg-white/50 hover:bg-white hover:border-violet-300'}`}>
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <div className="font-black text-violet-700 text-xl tracking-tighter uppercase">{pkg.name}</div>
-                                                        <div className="text-3xl font-black text-slate-900 tracking-tighter">${pkg.price}</div>
-                                                    </div>
-                                                    <p className="text-sm text-slate-500 font-bold leading-relaxed mb-6 h-12 overflow-hidden">{pkg.description}</p>
-                                                    {pkg.limit > 0 && <div className="inline-block bg-violet-100 text-violet-700 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-tight shadow-sm shadow-violet-100">עד {pkg.limit.toLocaleString()} פעולות AI</div>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </section>
-
-                                    {/* אזורי תמחור מותאמים - מוסתר בהדפסה */}
-                                    {config.customSections.map((sec) => (
-                                        <section key={sec.id} className="bg-white rounded-[2.5rem] p-10 border shadow-sm no-print">
-                                            <h3 className="text-2xl font-black flex items-center gap-4 mb-10 text-slate-800"><Puzzle className="text-blue-500" size={32} /> {sec.title}</h3>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                                {sec.packages.map(p => (
-                                                    <div key={p.id} onClick={() => handleCustomSelection(sec.id, p.id)} className={`cursor-pointer rounded-3xl p-8 border-2 transition-all ${customSelections[sec.id] === p.id ? 'border-blue-600 bg-blue-50 shadow-2xl scale-[1.02]' : 'border-slate-100 bg-white hover:border-blue-200'}`}>
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="font-black text-lg text-slate-700 uppercase tracking-tight">{p.name}</span>
-                                                            <span className="text-3xl font-black text-slate-900 tracking-tighter">${p.price}</span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </section>
-                                    ))}
-                                    
-                                    {/* --- מפרט טכני להדפסה בלבד (PRINT ONLY) --- */}
-                                    <div className="print-specification hidden print:block space-y-8 pt-8">
-                                        <h3 className="print-text-xl print-font-black text-slate-900 border-b-2 border-slate-200 pb-2 mb-6">מפרט טכני ופירוט רכיבים</h3>
-                                        <div className="grid grid-cols-2 gap-10">
-                                            <div>
-                                                <h4 className="print-font-black text-blue-600 text-sm uppercase mb-4 tracking-widest border-r-4 border-blue-600 pr-2">מודולים נבחרים:</h4>
-                                                <ul className="print-text-lg space-y-2 font-bold text-slate-800">
-                                                    {config.modules.filter(m => selectedModules.includes(m.id)).map(m => (
-                                                        <li key={m.id} className="flex items-center gap-2">
-                                                            <span>•</span> {m.name}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                            <div className="space-y-6">
-                                                <div>
-                                                    <h4 className="print-font-black text-blue-600 text-sm uppercase mb-2 tracking-widest border-r-4 border-blue-600 pr-2">רישוי ומשתמשים:</h4>
-                                                    <p className="print-text-lg font-black text-slate-900">{userCount} רשיונות משתמש</p>
-                                                    <p className="text-sm font-bold text-slate-600 mt-1">חבילה: {config.tiers.find(t => t.id === selectedTier)?.name}</p>
-                                                </div>
-                                                {selectedAI !== 'none' && (
-                                                    <div>
-                                                        <h4 className="print-font-black text-violet-600 text-sm uppercase mb-2 tracking-widest border-r-4 border-violet-600 pr-2">יכולות AI:</h4>
-                                                        <p className="print-text-lg font-black text-slate-900">{config.aiPackages.find(a => a.id === selectedAI)?.name}</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* לוח סיכום קבוע (Receipt) */}
-                                <div className={`fixed bottom-0 left-0 right-0 z-20 p-4 bg-white border-t lg:static lg:col-span-4 lg:p-0 lg:bg-transparent lg:border-none receipt-card ${showSummary ? 'block' : 'hidden lg:block'}`}>
-                                    <div className="sticky top-24 space-y-4">
-                                        <div className="bg-white rounded-[2.5rem] shadow-2xl border-4 border-white overflow-hidden">
-                                            <div className="bg-slate-900 text-white p-10 no-print">
-                                                <h2 className="text-3xl font-black tracking-tighter uppercase leading-tight">סיכום<br/>הצעה</h2>
-                                            </div>
-                                            <div className="p-10 space-y-8">
-                                                <div className="space-y-4 pb-8 border-b-2 border-dashed border-slate-100">
-                                                    <div className="flex justify-between text-base text-slate-500 font-bold tracking-tight"><span>תשתית ומודולים</span><span className="font-black text-slate-900 tracking-tighter">${totals.backboneTotal.toLocaleString()}</span></div>
-                                                    {totals.aiCost > 0 && <div className="flex justify-between text-base text-violet-600 font-black tracking-tight italic underline decoration-violet-100"><span>תוספת AI</span><span className="font-black tracking-tighter">${totals.aiCost.toLocaleString()}</span></div>}
-                                                    {totals.customBreakdown.map((c, i) => <div key={i} className="flex justify-between text-sm text-slate-400 font-bold italic tracking-tighter"><span>{c.sectionName}</span><span className="font-black text-slate-800">${c.price.toLocaleString()}</span></div>)}
-                                                </div>
-
-                                                <div className="pt-2">
-                                                    <div className="flex justify-between items-baseline mb-2">
-                                                        <span className="text-[11px] font-black text-blue-600 uppercase tracking-[0.2em] border-b-2 border-blue-100">חודשי קבוע (MRR)</span>
-                                                        <div className="text-right">
-                                                            <div className="print-text-xl print-font-black text-5xl font-black text-slate-900 tracking-tighter tabular-nums">${totals.totalMRR.toLocaleString()}</div>
-                                                            <div className="text-xs font-black text-slate-400 mt-2 uppercase tracking-tight">≈ {Math.round(totals.totalNIS).toLocaleString()} ₪ לחודש</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-orange-50/70 p-8 rounded-[2.5rem] border-2 border-orange-100 mt-10 space-y-6 shadow-sm">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-[11px] font-black text-orange-800 uppercase tracking-widest">עלות הקמה חד-פעמית</span>
-                                                        <span className="print-text-xl print-font-black text-3xl font-black text-orange-700 tracking-tighter tabular-nums">${totals.totalSetupCost.toLocaleString()}</span>
-                                                    </div>
-                                                    <div className="text-xs text-orange-600 font-black italic text-left tracking-tight">≈ {Math.round(totals.setupCostNIS).toLocaleString()} ₪ סה"כ</div>
-                                                    <div className="flex items-center gap-4 text-sm text-orange-800 border-t-2 border-orange-200/50 pt-6 font-black bg-white/50 p-4 rounded-3xl shadow-inner">
-                                                        <Clock size={24} className="text-orange-600"/>
-                                                        <span>משך פרויקט מוערך: <strong>{totals.totalSetupDays} ימי עבודה</strong></span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="pt-10 space-y-4 no-print">
-                                                    <button onClick={handleCreatePDF} className="w-full py-5 btn-pdf text-white font-black text-xl rounded-[2rem] flex items-center justify-center gap-4 shadow-2xl active:scale-95 transition-all">
-                                                        <FileText size={24} /> צור PDF
-                                                    </button>
-                                                </div>
-                                                
-                                                <div className="hidden print:block mt-16 text-[10px] text-slate-500 border-t-2 border-slate-100 pt-10 leading-relaxed font-bold italic">
-                                                    <div className="flex justify-between mb-3 uppercase tracking-tighter font-black">
-                                                        <span>* המחירים אינם כוללים מע"מ כחוק.</span>
-                                                        <span>שער המרה לחישוב: {config.exchangeRate} ₪</span>
-                                                    </div>
-                                                    <p className="mb-1 text-slate-400 uppercase tracking-widest text-[8px]">ONEFLOW PRO ERP Hybrid Infrastructure Solution</p>
-                                                    <p>* תוקף הצעת המחיר ל-14 ימי עסקים בלבד מיום הפקתה.</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* כפתור סיכום למובייל */}
-                                <div className="fixed bottom-6 left-6 right-6 lg:hidden z-50 no-print">
-                                    <button onClick={() => setShowSummary(!showSummary)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2.5rem] shadow-2xl flex justify-between px-10 items-center border border-slate-700">
-                                        <span className="uppercase text-[11px] tracking-widest">{showSummary ? 'סגור' : 'צפה בסיכום'}</span>
-                                        <div className="text-left font-black leading-tight">
-                                            <div className="text-xl tracking-tighter">${totals.totalMRR.toLocaleString()}</div>
-                                            <div className="text-[9px] opacity-60 tracking-widest uppercase">+ ${totals.totalSetupCost.toLocaleString()} setup</div>
-                                        </div>
+                                    <button onClick={handlePrint} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-xl shadow-lg flex items-center justify-center gap-2">
+                                        <Icon name="file-text"/> צור PDF
                                     </button>
                                 </div>
                             </div>
-                        )}
+                        </div>
                     </main>
+                    
+                    {/* Mobile Floating Button */}
+                    <div className="no-print fixed bottom-4 left-4 right-4 lg:hidden z-40">
+                        <button onClick={() => setShowSummary(true)} className="w-full bg-slate-900 text-white p-4 rounded-full shadow-2xl flex justify-between font-bold border border-slate-700">
+                            <span>סיכום עסקה</span>
+                            <span>${totals.totalMRR.toLocaleString()} /חודש</span>
+                        </button>
+                    </div>
+
+                    {/* --- Admin Full Screen Modal --- */}
+                    {isAdminOpen && (
+                        <div className="admin-modal fixed inset-0 z-[60] bg-white overflow-hidden flex flex-col">
+                            {/* Admin Header */}
+                            <div className="flex justify-between items-center p-6 border-b bg-slate-50">
+                                <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800"><Icon name="settings" className="text-blue-600"/> הגדרות מערכת מתקדמות</h2>
+                                <div className="flex gap-4">
+                                    <button onClick={() => {if(confirm("לאפס הכל?")) {localStorage.removeItem(STORAGE_KEY); setConfig(DEFAULT_CONFIG);}}} className="text-red-500 font-bold text-sm flex items-center gap-1 bg-white border border-red-200 px-3 py-1.5 rounded-lg"><Icon name="rotate-ccw" size={14}/> איפוס</button>
+                                    <button onClick={() => setIsAdminOpen(false)} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold">שמור וסגור</button>
+                                </div>
+                            </div>
+
+                            {/* Admin Content - Scrollable */}
+                            <div className="flex-grow overflow-y-auto p-8 custom-scroll">
+                                <div className="max-w-5xl mx-auto space-y-12">
+                                    
+                                    {/* Global Settings */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        <div className="p-6 bg-white rounded-2xl border shadow-sm">
+                                            <h3 className="font-bold mb-4 text-lg border-b pb-2">תמחור בסיס ($)</h3>
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div><label className="text-xs font-bold text-slate-500 mb-1 block">מחיר למודול</label><input type="number" className="w-full p-3 border rounded-xl bg-slate-50" value={config.basePricePerModule} onChange={e => updateConfigValue(['basePricePerModule'], Number(e.target.value))} /></div>
+                                                <div><label className="text-xs font-bold text-slate-500 mb-1 block">מחיר למשתמש</label><input type="number" className="w-full p-3 border rounded-xl bg-slate-50" value={config.basePricePerUser} onChange={e => updateConfigValue(['basePricePerUser'], Number(e.target.value))} /></div>
+                                            </div>
+                                        </div>
+                                        <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
+                                            <h3 className="font-bold mb-4 text-orange-800 text-lg border-b border-orange-200 pb-2">הגדרות פרויקט והקמה</h3>
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div><label className="text-xs font-bold text-orange-700 mb-1 block">תעריף שעה ($)</label><input type="number" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.setupHourlyRate} onChange={e => updateConfigValue(['setupHourlyRate'], Number(e.target.value))} /></div>
+                                                <div><label className="text-xs font-bold text-orange-700 mb-1 block">שער דולר (₪)</label><input type="number" step="0.1" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.exchangeRate} onChange={e => updateConfigValue(['exchangeRate'], Number(e.target.value))} /></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Modules Management */}
+                                    <div>
+                                        <h3 className="font-bold text-xl mb-4 text-slate-800">ניהול מודולים</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                            {config.modules.map((m, idx) => (
+                                                <div key={m.id} className="flex gap-3 items-center bg-white border p-3 rounded-xl shadow-sm">
+                                                    <button 
+                                                        onClick={() => setIconPickerOpen(iconPickerOpen === idx ? null : idx)} 
+                                                        className="p-3 bg-slate-100 rounded-lg hover:bg-blue-50 text-slate-600 hover:text-blue-600 transition-colors relative"
+                                                    >
+                                                        <Icon name={m.icon} size={20}/>
+                                                        {iconPickerOpen === idx && (
+                                                            <div className="absolute top-12 right-0 z-50 bg-white border shadow-xl rounded-xl p-3 grid grid-cols-5 gap-2 w-64 h-48 overflow-y-auto">
+                                                                {ICON_LIST.map(icon => (
+                                                                    <button key={icon} onClick={(e) => { e.stopPropagation(); updateConfigValue(['modules', idx, 'icon'], icon); setIconPickerOpen(null); }} className="p-2 hover:bg-slate-100 rounded"><Icon name={icon} size={16}/></button>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                    <div className="flex-grow">
+                                                        <label className="text-[10px] text-slate-400 font-bold">שם המודול</label>
+                                                        <input value={m.name} onChange={e => updateConfigValue(['modules', idx, 'name'], e.target.value)} className="w-full p-1 bg-transparent border-b border-slate-200 focus:border-blue-500 outline-none font-bold text-slate-700"/>
+                                                    </div>
+                                                    <div className="w-20">
+                                                        <label className="text-[10px] text-slate-400 font-bold">ימי הקמה</label>
+                                                        <input type="number" value={m.setupDays} onChange={e => updateConfigValue(['modules', idx, 'setupDays'], Number(e.target.value))} className="w-full p-1 bg-slate-50 border rounded text-center text-sm font-bold"/>
+                                                    </div>
+                                                    <button onClick={() => {
+                                                        const newMods = config.modules.filter(x => x.id !== m.id);
+                                                        updateConfigValue(['modules'], newMods);
+                                                    }} className="text-red-300 hover:text-red-500"><Icon name="trash-2" size={18}/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Add Module */}
+                                        <div className="flex gap-4 bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300 items-end">
+                                            <div className="flex-grow">
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">שם מודול חדש</label>
+                                                <input value={newModule.name} onChange={e => setNewModule({...newModule, name: e.target.value})} className="w-full p-2 border rounded-lg bg-white"/>
+                                            </div>
+                                            <div className="w-24">
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">ימים</label>
+                                                <input type="number" value={newModule.setupDays} onChange={e => setNewModule({...newModule, setupDays: Number(e.target.value)})} className="w-full p-2 border rounded-lg bg-white"/>
+                                            </div>
+                                            <button onClick={addNewModule} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700">הוסף</button>
+                                        </div>
+                                    </div>
+
+                                    {/* AI Packages */}
+                                    <div>
+                                        <h3 className="font-bold text-xl mb-4 text-violet-700">חבילות AI</h3>
+                                        <div className="space-y-3">
+                                            {config.aiPackages.map((pkg, idx) => (
+                                                <div key={pkg.id} className="flex flex-wrap md:flex-nowrap gap-4 items-end bg-white p-4 rounded-xl border shadow-sm">
+                                                    <div className="w-full md:w-1/4">
+                                                        <label className="text-[10px] font-bold text-slate-400">שם החבילה</label>
+                                                        <input value={pkg.name} onChange={e => updateConfigValue(['aiPackages', idx, 'name'], e.target.value)} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                                    </div>
+                                                    <div className="flex-grow">
+                                                        <label className="text-[10px] font-bold text-slate-400">תיאור</label>
+                                                        <input value={pkg.description} onChange={e => updateConfigValue(['aiPackages', idx, 'description'], e.target.value)} className="w-full p-2 border rounded-lg text-sm"/>
+                                                    </div>
+                                                    <div className="w-24">
+                                                        <label className="text-[10px] font-bold text-slate-400">מחיר ($)</label>
+                                                        <input type="number" value={pkg.price} onChange={e => updateConfigValue(['aiPackages', idx, 'price'], Number(e.target.value))} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                                    </div>
+                                                    <div className="pb-2">
+                                                        <label className="flex items-center gap-2 text-xs font-bold cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border">
+                                                            <input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['aiPackages', idx, 'isOneTime'], e.target.checked)} className="w-4 h-4"/> חד-פעמי
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Custom Sections */}
+                                    <div className="pt-8 border-t">
+                                        <h3 className="font-bold text-xl mb-6 text-slate-800">אזורים מותאמים אישית (תוספות)</h3>
+                                        {config.customSections.map((sec, sIdx) => (
+                                            <div key={sec.id} className="mb-8 bg-slate-50 p-6 rounded-2xl border border-slate-200 relative group">
+                                                <button onClick={() => {
+                                                    const newSecs = [...config.customSections];
+                                                    newSecs.splice(sIdx, 1);
+                                                    updateConfigValue(['customSections'], newSecs);
+                                                }} className="absolute top-4 left-4 text-red-400 hover:text-red-600 bg-white p-2 rounded-lg shadow-sm border opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="trash-2" size={16}/></button>
+                                                
+                                                <div className="mb-4">
+                                                    <label className="text-xs font-bold text-slate-500">כותרת האזור</label>
+                                                    <input value={sec.title} onChange={e => updateConfigValue(['customSections', sIdx, 'title'], e.target.value)} className="text-xl font-bold bg-transparent border-b-2 border-slate-300 w-full outline-none focus:border-blue-500 py-1"/>
+                                                </div>
+                                                
+                                                <div className="space-y-3">
+                                                    {sec.packages.map((pkg, pIdx) => (
+                                                        <div key={pkg.id} className="flex flex-wrap md:flex-nowrap gap-3 items-center bg-white p-3 rounded-xl border">
+                                                            <input value={pkg.name} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'name'], e.target.value)} className="flex-grow p-2 border rounded-lg text-sm" placeholder="שם פריט"/>
+                                                            <div className="relative">
+                                                                <span className="absolute left-2 top-2 text-slate-400 text-xs">$</span>
+                                                                <input type="number" value={pkg.price} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'price'], Number(e.target.value))} className="w-24 p-2 pl-4 border rounded-lg text-sm font-bold"/>
+                                                            </div>
+                                                            <label className="flex items-center gap-1 text-xs bg-slate-50 px-2 py-2 rounded border cursor-pointer"><input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'isOneTime'], e.target.checked)}/> חד-פעמי</label>
+                                                            <button onClick={() => {
+                                                                const newSecs = [...config.customSections];
+                                                                newSecs[sIdx].packages.splice(pIdx, 1);
+                                                                updateConfigValue(['customSections'], newSecs);
+                                                            }} className="text-red-300 hover:text-red-500"><Icon name="x" size={18}/></button>
+                                                        </div>
+                                                    ))}
+                                                    <button onClick={() => {
+                                                        const newSecs = [...config.customSections];
+                                                        newSecs[sIdx].packages.push({ id: Date.now(), name: 'פריט חדש', price: 0, isOneTime: false });
+                                                        updateConfigValue(['customSections'], newSecs);
+                                                    }} className="text-sm font-bold text-blue-600 mt-2 flex items-center gap-1">+ הוסף שורה</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        
+                                        <div className="flex gap-3 bg-white p-4 rounded-xl border border-blue-100 shadow-sm items-center">
+                                            <input value={newSectionTitle} onChange={e => setNewSectionTitle(e.target.value)} placeholder="שם אזור חדש (למשל: חבילות תמיכה)..." className="flex-grow p-3 border rounded-xl bg-slate-50"/>
+                                            <button onClick={addNewSection} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800">צור אזור</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsAdminOpen(false)} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold text-lg sticky bottom-0 shadow-xl">שמור וסגור</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- אזור הדפסה (PDF) מוסתר - נחשף רק בהדפסה --- */}
+                    <div id="print-area">
+                        <div className="print-container">
+                            {/* כותרת מסמך */}
+                            <div className="quote-header">
+                                <div>
+                                    <h1>הצעת מחיר: ONEFLOW 360 PRO</h1>
+                                    <div className="print-sub-header">
+                                        <p><strong>לכבוד:</strong> {clientName || "לקוח יקר"}</p>
+                                        <p><strong>תאריך:</strong> {new Date(quoteDate).toLocaleDateString('he-IL')}</p>
+                                    </div>
+                                </div>
+                                <div style={{textAlign: 'left'}}>
+                                    <h2 style={{margin:0, fontSize:'22pt', color:'#2563eb'}}>ONEBTN</h2>
+                                    <p style={{fontSize:'10pt', letterSpacing:'1px', textTransform:'uppercase'}}>Digital Backbone Solutions</p>
+                                </div>
+                            </div>
+
+                            {/* טבלת מודולים */}
+                            <h2>1. מפרט מודולים ותכולת פרויקט</h2>
+                            <table className="print-table">
+                                <thead>
+                                    <tr>
+                                        <th>מודול</th>
+                                        <th style={{width:'100px', textAlign:'center'}}>ימי הקמה</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {totals.selectedModulesList.map(m => (
+                                        <tr key={m.id}>
+                                            <td style={{fontWeight:'bold'}}>{m.name}</td>
+                                            <td style={{textAlign:'center'}}>{m.setupDays}</td>
+                                        </tr>
+                                    ))}
+                                    <tr style={{backgroundColor:'#f8fafc', fontWeight:'bold'}}>
+                                        <td>סה"כ ימי אפיון והקמה למודולים</td>
+                                        <td style={{textAlign:'center'}}>{totals.selectedModulesList.reduce((acc, m) => acc + (m.setupDays || 0), 0)}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            {/* טבלת רישוי */}
+                            <h2>2. רישוי, חבילות ותוספות</h2>
+                            <table className="print-table">
+                                <thead>
+                                    <tr>
+                                        <th>רכיב</th>
+                                        <th>פירוט</th>
+                                        <th style={{textAlign:'center'}}>סוג חיוב</th>
+                                        <th>מחיר</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style={{fontWeight:'bold'}}>משתמשים</td>
+                                        <td>{userCount} משתמשים במערכת</td>
+                                        <td style={{textAlign:'center'}}><span className="badge">חודשי</span></td>
+                                        <td>${totals.usersCost.toLocaleString()}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{fontWeight:'bold'}}>חבילת טרנזקציות</td>
+                                        <td>{totals.tierObj.name} (עד {totals.tierObj.limit.toLocaleString()} פעולות)</td>
+                                        <td style={{textAlign:'center'}}><span className="badge">חודשי</span></td>
+                                        <td>${totals.tierObj.price.toLocaleString()}</td>
+                                    </tr>
+                                    {/* AI Row */}
+                                    {totals.aiObj.price > 0 && (
+                                        <tr>
+                                            <td style={{fontWeight:'bold', color:'#7c3aed'}}>AI: {totals.aiObj.name}</td>
+                                            <td>{totals.aiObj.description}</td>
+                                            <td style={{textAlign:'center'}}>
+                                                <span className="badge" style={{backgroundColor: totals.aiObj.isOneTime ? '#fff7ed' : '#eff6ff', color: totals.aiObj.isOneTime ? '#c2410c' : '#1e40af'}}>
+                                                    {totals.aiObj.isOneTime ? 'חד-פעמי' : 'חודשי'}
+                                                </span>
+                                            </td>
+                                            <td>${totals.aiObj.price.toLocaleString()}</td>
+                                        </tr>
+                                    )}
+                                    {/* Custom Rows */}
+                                    {totals.customItems.map((item, idx) => (
+                                        <tr key={idx}>
+                                            <td style={{fontWeight:'bold'}}>{item.sectionTitle}: {item.name}</td>
+                                            <td>{item.description || '-'}</td>
+                                            <td style={{textAlign:'center'}}>
+                                                <span className="badge" style={{backgroundColor: item.isOneTime ? '#fff7ed' : '#eff6ff', color: item.isOneTime ? '#c2410c' : '#1e40af'}}>
+                                                    {item.isOneTime ? 'חד-פעמי' : 'חודשי'}
+                                                </span>
+                                            </td>
+                                            <td>${item.price.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+
+                            {/* סיכום עלויות */}
+                            <div className="summary-box">
+                                <h3 style={{marginTop:0, borderBottom:'none', fontSize:'18pt', color:'#1e3a8a'}}>סיכום עלויות הפרויקט</h3>
+                                
+                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'20px'}}>
+                                    <div style={{fontSize:'14pt', fontWeight:'bold'}}>סה"כ תשלום חודשי קבוע (MRR):</div>
+                                    <div style={{textAlign:'left'}}>
+                                        <div style={{fontSize:'22pt', fontWeight:'900', color:'#1e3a8a', lineHeight:1}}>${totals.totalMRR.toLocaleString()}</div>
+                                        <div style={{fontSize:'11pt', color:'#64748b'}}>≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
+                                    </div>
+                                </div>
+
+                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', paddingTop:'20px', borderTop:'1px dashed #94a3b8'}}>
+                                    <div>
+                                        <div style={{fontSize:'14pt', fontWeight:'bold', color:'#c2410c'}}>סה"כ עלות הקמה חד-פעמית (Setup):</div>
+                                        <div style={{fontSize:'10pt', color:'#ea580c', marginTop:'5px'}}>כולל אפיון, הטמעה והדרכה ({totals.totalSetupDays} ימי עבודה משוערים)</div>
+                                    </div>
+                                    <div style={{textAlign:'left'}}>
+                                        <div style={{fontSize:'22pt', fontWeight:'900', color:'#c2410c', lineHeight:1}}>${totals.totalSetup.toLocaleString()}</div>
+                                        <div style={{fontSize:'11pt', color:'#9a3412'}}>≈ {Math.round(totals.nisSetup).toLocaleString()} ₪</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{marginTop:'50px', textAlign:'center', fontSize:'10pt', color:'#64748b', borderTop:'1px solid #e2e8f0', paddingTop:'20px'}}>
+                                <p>המחירים אינם כוללים מע"מ כחוק | שער דולר לחישוב: {config.exchangeRate} ₪</p>
+                                <p>תוקף ההצעה: 14 ימי עסקים</p>
+                                <p style={{fontWeight:'bold', marginTop:'10px'}}>ONEFLOW PRO ERP Hybrid Infrastructure</p>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             );
         }
 
-        const root = createRoot(document.getElementById('root'));
+        const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
 </body>

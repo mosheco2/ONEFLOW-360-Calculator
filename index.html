@@ -153,7 +153,7 @@
         };
 
         function App() {
-            const STORAGE_KEY = 'oneflow_pro_full_v1_fixed_summary';
+            const STORAGE_KEY = 'oneflow_pro_full_v_final_fixed_sidebar';
 
             // --- State ---
             const [config, setConfig] = useState(() => {
@@ -198,13 +198,15 @@
 
                 let addonsMRR = 0;
                 let addonsSetup = 0;
-                const mrrBreakdown = []; // למערך פירוט
+                const mrrBreakdown = [];
+                const setupBreakdown = [];
                 
                 // AI
                 const aiObj = config.aiPackages.find(a => a.id === selectedAI) || config.aiPackages[0];
                 if(aiObj.price > 0) {
                     if(aiObj.isOneTime) {
                         addonsSetup += aiObj.price;
+                        setupBreakdown.push({ label: `AI: ${aiObj.name}`, price: aiObj.price });
                     } else {
                         addonsMRR += aiObj.price;
                         mrrBreakdown.push({ label: `AI: ${aiObj.name}`, price: aiObj.price });
@@ -219,6 +221,7 @@
                     if(pkg && pkg.price > 0) {
                         if(pkg.isOneTime) {
                             addonsSetup += pkg.price;
+                            setupBreakdown.push({ label: `${sec.title}: ${pkg.name}`, price: pkg.price });
                         } else {
                             addonsMRR += pkg.price;
                             mrrBreakdown.push({ label: `${sec.title}: ${pkg.name}`, price: pkg.price });
@@ -238,7 +241,7 @@
 
                 return {
                     modulesCost, usersCost, tierObj, backboneTotal,
-                    addonsMRR, addonsSetup, customItems, aiObj, mrrBreakdown, // Added mrrBreakdown to return
+                    addonsMRR, addonsSetup, customItems, aiObj, mrrBreakdown, setupBreakdown,
                     totalSetupDays, setupLaborCost, totalSetup, totalMRR,
                     selectedModulesList,
                     nisMRR: totalMRR * config.exchangeRate,
@@ -377,7 +380,7 @@
                             ))}
                         </div>
 
-                        {/* Sidebar Summary - Fixed/Sticky Logic */}
+                        {/* Sidebar Summary */}
                         <div className={`lg:w-96 flex-shrink-0 ${showSummary ? 'fixed inset-0 z-50 bg-white p-6 overflow-y-auto' : 'hidden lg:block'}`}>
                              {showSummary && <button onClick={() => setShowSummary(false)} className="absolute top-4 left-4 p-2 bg-slate-100 rounded-full"><Icon name="x"/></button>}
                              
@@ -386,20 +389,20 @@
                                     <h2 className="text-2xl font-black uppercase tracking-tight">סיכום הצעה</h2>
                                 </div>
                                 <div className="p-8 space-y-6">
-                                    {/* Monthly Breakdown */}
+                                    {/* פירוט שוטף */}
                                     <div className="space-y-3 pb-6 border-b border-dashed border-slate-200 text-sm">
                                         <div className="flex justify-between font-bold text-slate-600"><span>תשתית ומודולים</span><span>${totals.backboneTotal.toLocaleString()}</span></div>
                                         
-                                        {/* תוספות חודשיות - כאן הפירוט שביקשת! */}
+                                        {/* פירוט מלא של כל התוספות החודשיות */}
                                         {totals.mrrBreakdown.map((item, i) => (
-                                            <div key={i} className="flex justify-between text-blue-600 font-bold bg-blue-50 p-2 rounded">
-                                                <span>{item.label}</span>
+                                            <div key={i} className="flex justify-between text-blue-700 bg-blue-50 p-2 rounded text-xs font-bold items-center">
+                                                <span className="truncate pl-2">{item.label}</span>
                                                 <span>${item.price.toLocaleString()}</span>
                                             </div>
                                         ))}
                                     </div>
 
-                                    {/* Total MRR */}
+                                    {/* MRR */}
                                     <div>
                                         <div className="flex justify-between items-end mb-1">
                                             <span className="text-xs font-black text-blue-600 uppercase tracking-widest">חודשי קבוע (MRR)</span>
@@ -408,12 +411,24 @@
                                         <div className="text-left text-xs font-bold text-slate-400">≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
                                     </div>
 
-                                    {/* Setup Cost */}
+                                    {/* SETUP */}
                                     <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
                                         <div className="flex justify-between items-center mb-2">
                                             <span className="text-xs font-black text-orange-800 uppercase tracking-wide">הקמה חד-פעמית</span>
                                             <span className="text-2xl font-black text-orange-700">${totals.totalSetup.toLocaleString()}</span>
                                         </div>
+
+                                        {/* פירוט תוספות חד פעמיות אם יש */}
+                                        {totals.setupBreakdown.length > 0 && (
+                                            <div className="mb-3 space-y-1">
+                                                {totals.setupBreakdown.map((item, i) => (
+                                                    <div key={i} className="flex justify-between text-[10px] text-orange-800 opacity-80">
+                                                        <span>{item.label}</span><span>${item.price}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         <div className="text-left text-[10px] text-orange-600 font-bold mb-3 border-t border-orange-200 pt-2">≈ {Math.round(totals.nisSetup).toLocaleString()} ₪</div>
                                         <div className="flex items-center gap-2 text-xs font-black text-orange-800 bg-white/50 p-2 rounded-lg">
                                             <Icon name="clock" size={16}/> <span>זמן משוער: {totals.totalSetupDays} ימי עבודה</span>
@@ -467,6 +482,29 @@
                                                 <div><label className="text-xs font-bold text-orange-700 mb-1 block">תעריף שעה ($)</label><input type="number" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.setupHourlyRate} onChange={e => updateConfigValue(['setupHourlyRate'], Number(e.target.value))} /></div>
                                                 <div><label className="text-xs font-bold text-orange-700 mb-1 block">שער דולר (₪)</label><input type="number" step="0.1" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.exchangeRate} onChange={e => updateConfigValue(['exchangeRate'], Number(e.target.value))} /></div>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    {/* עריכת חבילות טרנזקציות (Tiers) - נוסף לבקשתך */}
+                                    <div>
+                                        <h3 className="font-bold text-xl mb-4 text-blue-800">חבילות טרנזקציות (Tiers)</h3>
+                                        <div className="space-y-3">
+                                            {config.tiers.map((tier, idx) => (
+                                                <div key={tier.id} className="flex gap-4 items-end bg-white p-4 rounded-xl border shadow-sm">
+                                                    <div className="flex-grow">
+                                                        <label className="text-[10px] font-bold text-slate-400">שם החבילה</label>
+                                                        <input value={tier.name} onChange={e => updateConfigValue(['tiers', idx, 'name'], e.target.value)} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                                    </div>
+                                                    <div className="w-32">
+                                                         <label className="text-[10px] font-bold text-slate-400">כמות</label>
+                                                         <input type="number" value={tier.limit} onChange={e => updateConfigValue(['tiers', idx, 'limit'], Number(e.target.value))} className="w-full p-2 border rounded-lg text-sm"/>
+                                                    </div>
+                                                    <div className="w-24">
+                                                        <label className="text-[10px] font-bold text-slate-400">מחיר ($)</label>
+                                                        <input type="number" value={tier.price} onChange={e => updateConfigValue(['tiers', idx, 'price'], Number(e.target.value))} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
 
@@ -680,7 +718,7 @@
                                     {totals.customItems.map((item, idx) => (
                                         <tr key={idx}>
                                             <td style={{fontWeight:'bold'}}>{item.sectionTitle}: {item.name}</td>
-                                            <td>{item.description || '-'}</td>
+                                            <td>{item.description}</td>
                                             <td style={{textAlign:'center'}}>
                                                 <span className="badge" style={{backgroundColor: item.isOneTime ? '#fff7ed' : '#eff6ff', color: item.isOneTime ? '#c2410c' : '#1e40af'}}>
                                                     {item.isOneTime ? 'חד-פעמי' : 'חודשי'}

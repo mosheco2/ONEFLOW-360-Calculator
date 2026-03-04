@@ -35,7 +35,7 @@
         @media print {
             @page { 
                 size: A4; 
-                margin: 15mm 10mm; /* מרווחים גדולים יותר למעלה ולמטה כדי למנוע חיתוך */
+                margin: 15mm 10mm;
             }
             body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
             
@@ -95,6 +95,8 @@
                 font-size: 8pt; 
                 font-weight: bold; 
             }
+            .badge-public { background-color: #dbeafe !important; color: #1e40af !important; border-color: #bfdbfe !important; }
+            .badge-private { background-color: #f3e8ff !important; color: #6b21a8 !important; border-color: #e9d5ff !important; }
         }
         
         #print-area { display: none; }
@@ -114,15 +116,13 @@
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
-        // רשימת אייקונים
         const ICON_LIST = [
             'shopping-cart', 'package', 'layers', 'truck', 'megaphone', 'mail', 'briefcase', 'bar-chart-3',
             'activity', 'users', 'puzzle', 'globe', 'shield', 'zap', 'coins', 'hammer', 'clock', 'calendar',
             'database', 'settings', 'check-circle-2', 'file-text', 'server', 'smartphone', 'wifi', 'box', 'copy',
-            'download', 'upload'
+            'download', 'upload', 'lock', 'unlock'
         ];
 
-        // מדרגות ברירת מחדל
         const generateDefaultTiers = (moduleId) => [
             { id: `${moduleId}_t1`, name: 'בסיסי (עד 1,000)', price: 100 },
             { id: `${moduleId}_t2`, name: 'מתקדם (עד 5,000)', price: 250 },
@@ -131,20 +131,28 @@
 
         // --- נתוני ברירת מחדל ---
         const DEFAULT_CONFIG = {
-            enableUsers: true,
-            enableTiers: true,
+            enableGlobalTiers: true,
             enableAI: true,
-            basePricePerUser: 45,
             exchangeRate: 3.7, 
             setupHourlyRate: 350,
             setupHoursPerDay: 9,
             uiText: {
-                modulesHeader: "רכיב א': מודולים נדרשים",
-                usersHeader: "רכיב ב': רישוי משתמשים",
-                tiersHeader: "רכיב ג': טרנזקציות ומסמכים",
-                moduleTiersHeader: "הגדרת מדרגות עומס למודולים",
+                modulesHeader: "רכיב א': בחירת מודולים נדרשים",
+                moduleTreeHeader: "רכיב ב': עץ בניית מודולים (הגדרות גישה ועומסים)",
+                tiersHeader: "רכיב ג': חבילת טרנזקציות ומסמכים גלובלית",
                 aiHeader: "רכיב ד': שילוב AI",
             },
+            // חבילות משתמשים לפי סוג חשיפה
+            publicUserPackages: [
+                { id: 'pub_1', name: 'עד 100 משתמשי קצה', price: 50 },
+                { id: 'pub_2', name: 'עד 1,000 משתמשי קצה', price: 150 },
+                { id: 'pub_3', name: 'ללא הגבלה', price: 400 },
+            ],
+            privateUserPackages: [
+                { id: 'priv_1', name: 'עד 5 משתמשי פנים', price: 100 },
+                { id: 'priv_2', name: 'עד 20 משתמשי פנים', price: 300 },
+                { id: 'priv_3', name: 'ללא הגבלה', price: 800 },
+            ],
             modules: [
                 { id: 'sales', name: 'מכירות', icon: 'shopping-cart', setupDays: 3, note: '', tiers: generateDefaultTiers('sales') },
                 { id: 'inventory', name: 'מלאי', icon: 'package', setupDays: 5, note: '', tiers: generateDefaultTiers('inventory') },
@@ -152,7 +160,7 @@
                 { id: 'shipping', name: 'שילוח', icon: 'truck', setupDays: 2, note: '', tiers: generateDefaultTiers('shipping') },
                 { id: 'bi', name: 'BI & דוחות', icon: 'bar-chart-3', setupDays: 5, note: '', tiers: generateDefaultTiers('bi') },
             ],
-            tiers: [
+            globalTiers: [
                 { id: 'S', name: 'Tier S (Basic)', limit: 200, price: 150 },
                 { id: 'M', name: 'Tier M (Growth)', limit: 1000, price: 450 },
                 { id: 'L', name: 'Tier L (Scale)', limit: 5000, price: 1200 },
@@ -167,26 +175,17 @@
         };
 
         function App() {
-            // שמירה על אותו מפתח כדי למנוע איבוד נתונים בין גרסאות אם לא משתמשים בייצוא
-            const STORAGE_KEY = 'oneflow_pro_v_internal_estimator_01';
+            const STORAGE_KEY = 'oneflow_pro_v_advanced_tree_02';
 
-            // --- State ---
             const [config, setConfig] = useState(() => {
                 try {
                     const saved = localStorage.getItem(STORAGE_KEY);
                     if (saved) {
                         const parsed = JSON.parse(saved);
-                        
-                        // מיגרציה לגרסאות קודמות - הוספת פרמטרים חדשים
-                        if (parsed.enableUsers === undefined) parsed.enableUsers = true;
-                        if (parsed.enableTiers === undefined) parsed.enableTiers = true;
-                        if (parsed.enableAI === undefined) parsed.enableAI = true;
-
-                        parsed.modules = parsed.modules.map(m => ({
-                            ...m,
-                            tiers: m.tiers && m.tiers.length > 0 ? m.tiers : generateDefaultTiers(m.id),
-                            note: m.note || ''
-                        }));
+                        // מיגרציה נתונים אם חסר
+                        if (!parsed.publicUserPackages) parsed.publicUserPackages = DEFAULT_CONFIG.publicUserPackages;
+                        if (!parsed.privateUserPackages) parsed.privateUserPackages = DEFAULT_CONFIG.privateUserPackages;
+                        if (!parsed.globalTiers) parsed.globalTiers = DEFAULT_CONFIG.globalTiers;
                         return parsed;
                     }
                     return DEFAULT_CONFIG;
@@ -195,13 +194,16 @@
 
             // נתוני אומדן (לשימוש פנימי)
             const [clientName, setClientName] = useState('');
+            const [implementerName, setImplementerName] = useState(''); // שם המיישם
             const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split('T')[0]);
             
             // בחירות המיישם
             const [selectedModules, setSelectedModules] = useState(['sales', 'inventory']);
-            const [moduleTiers, setModuleTiers] = useState({}); 
-            const [userCount, setUserCount] = useState(5);
-            const [selectedTier, setSelectedTier] = useState('S');
+            
+            // תצורת עץ מודולים: { [moduleId]: { tierId, accessType: 'public'|'private', userPackageId } }
+            const [moduleConfigs, setModuleConfigs] = useState({}); 
+
+            const [selectedGlobalTier, setSelectedGlobalTier] = useState('S');
             const [selectedAI, setSelectedAI] = useState('none');
             const [customSelections, setCustomSelections] = useState({});
             
@@ -211,30 +213,33 @@
             const [iconPickerOpen, setIconPickerOpen] = useState(null); 
             const fileInputRef = useRef(null);
 
-            // Admin Inputs
             const [newModule, setNewModule] = useState({ name: '', icon: 'package', setupDays: 0, note: '' });
             const [newSectionTitle, setNewSectionTitle] = useState('');
 
-            // Persistence config
+            // Persistence
             useEffect(() => {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
                 if(window.lucide) window.lucide.createIcons();
-            }, [config, selectedModules, isAdminOpen]);
+            }, [config, selectedModules, moduleConfigs, isAdminOpen]);
 
-            // אתחול מדרגות למודולים שנבחרו אם אין בחירה עדיין
+            // אתחול אוטומטי של הגדרות למודול שסומן
             useEffect(() => {
-                const updatedTiers = { ...moduleTiers };
+                const updatedConfigs = { ...moduleConfigs };
                 let changed = false;
                 selectedModules.forEach(mId => {
-                    if (!updatedTiers[mId]) {
+                    if (!updatedConfigs[mId]) {
                         const mod = config.modules.find(x => x.id === mId);
-                        if (mod && mod.tiers && mod.tiers.length > 0) {
-                            updatedTiers[mId] = mod.tiers[0].id;
+                        if (mod) {
+                            updatedConfigs[mId] = {
+                                tierId: mod.tiers?.[0]?.id || '',
+                                accessType: 'private', // ברירת מחדל
+                                userPackageId: config.privateUserPackages[0]?.id || ''
+                            };
                             changed = true;
                         }
                     }
                 });
-                if (changed) setModuleTiers(updatedTiers);
+                if (changed) setModuleConfigs(updatedConfigs);
             }, [selectedModules, config.modules]);
 
             // --- לוגיקת חישוב ---
@@ -245,25 +250,36 @@
 
                 selectedModules.forEach(mId => {
                     const mod = config.modules.find(x => x.id === mId);
-                    if (mod) {
+                    const modConf = moduleConfigs[mId];
+                    if (mod && modConf) {
                         totalSetupDays += Number(mod.setupDays || 0);
-                        const tierId = moduleTiers[mId];
-                        const selectedTier = mod.tiers?.find(t => t.id === tierId) || mod.tiers?.[0];
-                        const price = selectedTier ? selectedTier.price : 0;
-                        modulesMRR += price;
+                        
+                        // חישוב מדרגת פעילות
+                        const selectedTier = mod.tiers?.find(t => t.id === modConf.tierId) || mod.tiers?.[0];
+                        const tierPrice = selectedTier ? selectedTier.price : 0;
+                        
+                        // חישוב חבילת משתמשים לפי סוג הגישה
+                        const userPkgList = modConf.accessType === 'public' ? config.publicUserPackages : config.privateUserPackages;
+                        const selectedUserPkg = userPkgList.find(p => p.id === modConf.userPackageId) || userPkgList[0];
+                        const userPrice = selectedUserPkg ? selectedUserPkg.price : 0;
+
+                        const totalModulePrice = tierPrice + userPrice;
+                        modulesMRR += totalModulePrice;
 
                         selectedModulesDetails.push({
                             ...mod,
+                            accessType: modConf.accessType,
                             selectedTierName: selectedTier ? selectedTier.name : 'בסיסי',
-                            monthlyPrice: price
+                            tierPrice: tierPrice,
+                            selectedUserPkgName: selectedUserPkg ? selectedUserPkg.name : 'ללא משתמשים',
+                            userPrice: userPrice,
+                            monthlyPrice: totalModulePrice
                         });
                     }
                 });
 
-                // חישובים מותנים באזורים פעילים
-                const usersCost = config.enableUsers ? (userCount * config.basePricePerUser) : 0;
-                const tierObj = config.enableTiers ? (config.tiers.find(t => t.id === selectedTier) || config.tiers[0]) : { price: 0, name: '' };
-                const backboneTotal = modulesMRR + usersCost + (tierObj.price || 0);
+                const globalTierObj = config.enableGlobalTiers ? (config.globalTiers.find(t => t.id === selectedGlobalTier) || config.globalTiers[0]) : { price: 0, name: '' };
+                const backboneTotal = modulesMRR + (globalTierObj.price || 0);
 
                 let addonsMRR = 0;
                 let addonsSetup = 0;
@@ -307,27 +323,26 @@
                 const totalMRR = backboneTotal + addonsMRR;
 
                 return {
-                    modulesMRR, usersCost, tierObj, backboneTotal,
+                    modulesMRR, globalTierObj, backboneTotal,
                     addonsMRR, addonsSetup, customItems, aiObj, mrrBreakdown, setupBreakdown,
                     totalSetupDays, setupLaborCost, totalSetup, totalMRR,
                     selectedModulesDetails,
                     nisMRR: totalMRR * config.exchangeRate,
                     nisSetup: totalSetup * config.exchangeRate
                 };
-            }, [config, selectedModules, userCount, moduleTiers, selectedTier, selectedAI, customSelections]);
+            }, [config, selectedModules, moduleConfigs, selectedGlobalTier, selectedAI, customSelections]);
 
 
             const handlePrint = () => window.print();
 
-            // פונקציית ניקוי מסודרת
             function clearUserSelections() {
                 if(window.confirm('האם אתה בטוח שברצונך לנקות את כל הבחירות ולהתחיל פרויקט חדש?')) {
                     setClientName('');
+                    setImplementerName('');
                     setQuoteDate(new Date().toISOString().split('T')[0]);
                     setSelectedModules([]);
-                    setModuleTiers({});
-                    setUserCount(5);
-                    setSelectedTier('S');
+                    setModuleConfigs({});
+                    setSelectedGlobalTier('S');
                     setSelectedAI('none');
                     setCustomSelections({});
                 }
@@ -336,14 +351,24 @@
             const toggleModule = (id) => {
                 setSelectedModules(prev => {
                     if (prev.includes(id)) {
-                        const newTiers = { ...moduleTiers };
-                        delete newTiers[id];
-                        setModuleTiers(newTiers);
+                        const newConfigs = { ...moduleConfigs };
+                        delete newConfigs[id];
+                        setModuleConfigs(newConfigs);
                         return prev.filter(m => m !== id);
                     } else {
                         return [...prev, id];
                     }
                 });
+            };
+
+            const updateModuleConfig = (moduleId, field, value) => {
+                setModuleConfigs(prev => ({
+                    ...prev,
+                    [moduleId]: {
+                        ...prev[moduleId],
+                        [field]: value
+                    }
+                }));
             };
             
             // --- Admin Helpers ---
@@ -353,6 +378,14 @@
                for(let i=0; i<path.length-1; i++) current = current[path[i]];
                current[path[path.length-1]] = val;
                setConfig(newConfig);
+            };
+
+            // הוספת חבילות משתמשים בניהול
+            const addUserPackage = (type) => {
+                const arrName = type === 'public' ? 'publicUserPackages' : 'privateUserPackages';
+                const newPkgs = [...config[arrName]];
+                newPkgs.push({ id: `${type}_${Date.now()}`, name: 'חבילה חדשה', price: 100 });
+                updateConfigValue([arrName], newPkgs);
             };
 
             const duplicateModule = (moduleId) => {
@@ -407,18 +440,16 @@
                 }
             };
 
-            // Export Config to JSON File
             const exportConfig = () => {
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config));
                 const downloadAnchorNode = document.createElement('a');
                 downloadAnchorNode.setAttribute("href",     dataStr);
                 downloadAnchorNode.setAttribute("download", "oneflow_calculator_backup.json");
-                document.body.appendChild(downloadAnchorNode); // required for firefox
+                document.body.appendChild(downloadAnchorNode); 
                 downloadAnchorNode.click();
                 downloadAnchorNode.remove();
             };
 
-            // Import Config from JSON File
             const importConfig = (event) => {
                 const fileReader = new FileReader();
                 fileReader.readAsText(event.target.files[0], "UTF-8");
@@ -435,17 +466,14 @@
                         alert("שגיאה בקריאת הקובץ.");
                     }
                 };
-                // Reset input
                 event.target.value = null;
             };
 
             // --- Render Components ---
             const ModuleButton = ({ module, isSelected }) => (
-                <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
+                <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                     <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}><Icon name={module.icon} size={24} /></div>
-                    <span className="text-sm font-bold text-center">{module.name}</span>
-                    {module.note && <span className="text-[10px] text-slate-400 mt-1 text-center leading-tight line-clamp-2">{module.note}</span>}
-                    {module.setupDays > 0 && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 rounded mt-2">{module.setupDays} ימי אפיון והקמה</span>}
+                    <span className={`text-sm font-bold text-center ${isSelected ? 'text-blue-800' : 'text-slate-600'}`}>{module.name}</span>
                     {isSelected && <div className="absolute top-2 right-2 text-blue-600"><Icon name="check-circle-2" size={16} /></div>}
                 </button>
             );
@@ -455,26 +483,21 @@
                     
                     {/* Header */}
                     <header className="no-print sticky top-0 z-50 bg-white border-b shadow-sm h-16 flex items-center justify-between px-6">
-                        <div className="flex items-center gap-3">
-                            {/* לוגו מוצר במסך הראשי */}
-                            <img 
-                                src="oneflowlogo.png" 
-                                alt="ONEFLOW 360 PRO" 
-                                className="h-8 object-contain"
-                                onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }}
-                            />
+                        <div className="flex items-center gap-4">
+                            <img src="oneflowlogo.png" alt="ONEFLOW 360 PRO" className="h-8 object-contain" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
                             <div style={{display:'none'}} className="items-center gap-2">
                                 <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-lg">1</div>
                                 <div className="text-xl font-bold">ONEFLOW <span className="text-blue-600">360 PRO</span></div>
                             </div>
-                            <span className="text-sm font-medium text-slate-400 border-r-2 border-slate-200 pr-3 hidden md:block">מחשבון אומדן פרויקטים למיישם</span>
+                            <span className="text-sm font-medium text-slate-400 border-r-2 border-slate-200 pr-4 hidden lg:block">מחשבון אומדן פרויקטים למיישם</span>
                         </div>
                         <div className="flex items-center gap-3">
-                             <input type="text" placeholder="שם פרויקט / לקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm w-48 bg-slate-50" />
+                             <input type="text" placeholder="שם המיישם" value={implementerName} onChange={e => setImplementerName(e.target.value)} className="hidden lg:block p-2 border border-blue-200 rounded-lg text-sm w-32 bg-blue-50 placeholder-blue-400 font-bold" />
+                             <input type="text" placeholder="שם פרויקט / לקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm w-40 bg-slate-50" />
                              <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm bg-slate-50" />
                              
                              <button onClick={clearUserSelections} className="flex items-center gap-1 p-2 text-sm font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                                 <Icon name="rotate-ccw" size={16} /> <span className="hidden md:inline">נקה בחירות</span>
+                                 <Icon name="rotate-ccw" size={16} /> <span className="hidden md:inline">נקה</span>
                              </button>
 
                             <button onClick={() => setIsAdminOpen(true)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-600"><Icon name="settings" /></button>
@@ -482,13 +505,14 @@
                     </header>
 
                     {/* Main Interface */}
-                    <main className="no-print max-w-7xl mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8">
+                    <main className="no-print max-w-[90rem] mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8">
                         
                         {/* Center Column - Configurator */}
                         <div className="flex-grow space-y-8 pb-24">
                             
                             {/* Mobile Inputs */}
-                            <div className="md:hidden space-y-2">
+                            <div className="lg:hidden space-y-2 bg-white p-4 rounded-xl border shadow-sm">
+                                <input type="text" placeholder="שם המיישם" value={implementerName} onChange={e => setImplementerName(e.target.value)} className="w-full p-3 border rounded-xl bg-blue-50 font-bold" />
                                 <input type="text" placeholder="שם פרויקט / לקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="w-full p-3 border rounded-xl" />
                                 <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="w-full p-3 border rounded-xl" />
                             </div>
@@ -496,39 +520,101 @@
                             {/* 1. Modules Selection */}
                             <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
                                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="database" className="text-blue-500"/> {config.uiText.modulesHeader}</h3>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
                                     {config.modules.map(m => <ModuleButton key={m.id} module={m} isSelected={selectedModules.includes(m.id)} />)}
                                 </div>
                             </section>
 
-                            {/* 2. Tiers / Config per selected module */}
+                            {/* 2. Module Configuration Tree (NEW) */}
                             {selectedModules.length > 0 && (
                                 <section className="bg-blue-50/50 p-6 rounded-3xl shadow-inner border border-blue-100">
-                                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-800"><Icon name="layers" className="text-blue-500"/> {config.uiText.moduleTiersHeader || "הגדרת מדרגות למודולים"}</h3>
-                                    <div className="space-y-4">
+                                    <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-blue-800"><Icon name="layers" className="text-blue-500"/> {config.uiText.moduleTreeHeader}</h3>
+                                    <div className="space-y-5">
                                         {selectedModules.map(mId => {
                                             const m = config.modules.find(x => x.id === mId);
-                                            if (!m) return null;
+                                            const modConf = moduleConfigs[mId];
+                                            if (!m || !modConf) return null;
+                                            
+                                            // מחשב מחיר ספציפי למודול להצגה בממשק
+                                            const currentTier = m.tiers?.find(t => t.id === modConf.tierId);
+                                            const userPkgs = modConf.accessType === 'public' ? config.publicUserPackages : config.privateUserPackages;
+                                            const currentUserPkg = userPkgs.find(p => p.id === modConf.userPackageId) || userPkgs[0];
+                                            const currentTotal = (currentTier?.price || 0) + (currentUserPkg?.price || 0);
+
                                             return (
-                                                <div key={m.id} className="bg-white p-4 rounded-2xl border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                                    <div className="flex items-center gap-3 font-bold text-slate-700">
-                                                        <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Icon name={m.icon} size={20}/></div>
-                                                        {m.name}
+                                                <div key={m.id} className="bg-white p-5 rounded-2xl border border-blue-100 shadow-sm transition-all hover:shadow-md">
+                                                    
+                                                    {/* כותרת מודול בעץ */}
+                                                    <div className="flex justify-between items-center border-b pb-3 mb-4">
+                                                        <div className="flex items-center gap-3 font-bold text-lg text-slate-800">
+                                                            <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Icon name={m.icon} size={20}/></div>
+                                                            {m.name}
+                                                            {m.note && <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-1 rounded-md hidden md:inline-block">{m.note}</span>}
+                                                        </div>
+                                                        <div className="text-xl font-black text-blue-700">${currentTotal} <span className="text-xs text-slate-400 font-normal">/חודש</span></div>
                                                     </div>
-                                                    <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 w-full md:w-auto">
-                                                        {m.tiers?.map(t => {
-                                                            const isSelected = moduleTiers[m.id] === t.id;
-                                                            return (
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                        {/* סוג גישה (Public/Private) */}
+                                                        <div className="space-y-2">
+                                                            <label className="text-xs font-bold text-slate-500 block">סוג חשיפה / גישה למודול</label>
+                                                            <div className="flex p-1 bg-slate-100 rounded-lg">
                                                                 <button 
-                                                                    key={t.id} 
-                                                                    onClick={() => setModuleTiers({...moduleTiers, [m.id]: t.id})}
-                                                                    className={`px-4 py-2 rounded-xl text-sm border-2 transition-all flex-shrink-0 text-right ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-800 font-bold shadow-md' : 'border-slate-200 hover:border-slate-300 bg-slate-50 text-slate-600'}`}
+                                                                    onClick={() => {
+                                                                        const newPkg = config.privateUserPackages[0]?.id || '';
+                                                                        updateModuleConfig(m.id, 'accessType', 'private');
+                                                                        updateModuleConfig(m.id, 'userPackageId', newPkg);
+                                                                    }}
+                                                                    className={`flex-1 py-2 text-sm font-bold rounded-md transition-all flex justify-center items-center gap-2 ${modConf.accessType === 'private' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
                                                                 >
-                                                                    <div className="text-[11px] mb-1 opacity-80">{t.name}</div>
-                                                                    <div className="font-black">${t.price}</div>
+                                                                    <Icon name="lock" size={14}/> פנימי (Private)
                                                                 </button>
-                                                            )
-                                                        })}
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        const newPkg = config.publicUserPackages[0]?.id || '';
+                                                                        updateModuleConfig(m.id, 'accessType', 'public');
+                                                                        updateModuleConfig(m.id, 'userPackageId', newPkg);
+                                                                    }}
+                                                                    className={`flex-1 py-2 text-sm font-bold rounded-md transition-all flex justify-center items-center gap-2 ${modConf.accessType === 'public' ? 'bg-white shadow text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}
+                                                                >
+                                                                    <Icon name="globe" size={14}/> חיצוני (Public)
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* חבילת משתמשים למודול */}
+                                                        <div className="space-y-2">
+                                                            <label className="text-xs font-bold text-slate-500 block flex items-center justify-between">
+                                                                חבילת משתמשים מורשים
+                                                                <span className="text-blue-500">${currentUserPkg?.price || 0}</span>
+                                                            </label>
+                                                            <select 
+                                                                value={modConf.userPackageId} 
+                                                                onChange={(e) => updateModuleConfig(m.id, 'userPackageId', e.target.value)}
+                                                                className="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-bold focus:ring-2 ring-blue-200 outline-none"
+                                                            >
+                                                                {userPkgs.map(p => (
+                                                                    <option key={p.id} value={p.id}>{p.name} (+${p.price})</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+
+                                                        {/* מדרגת עומס/טרנזקציות למודול */}
+                                                        <div className="space-y-2">
+                                                            <label className="text-xs font-bold text-slate-500 block flex items-center justify-between">
+                                                                מדרגת טרנזקציות / עומס
+                                                                <span className="text-blue-500">${currentTier?.price || 0}</span>
+                                                            </label>
+                                                            <select 
+                                                                value={modConf.tierId} 
+                                                                onChange={(e) => updateModuleConfig(m.id, 'tierId', e.target.value)}
+                                                                className="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-bold focus:ring-2 ring-blue-200 outline-none"
+                                                            >
+                                                                {m.tiers?.map(t => (
+                                                                    <option key={t.id} value={t.id}>{t.name} (+${t.price})</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )
@@ -537,24 +623,13 @@
                                 </section>
                             )}
 
-                            {/* 3. Users Section */}
-                            {config.enableUsers && (
-                                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h3 className="text-lg font-bold flex items-center gap-2 text-slate-700"><Icon name="users" className="text-blue-500"/> {config.uiText.usersHeader}</h3>
-                                        <span className="text-3xl font-black text-slate-900">{userCount}</span>
-                                    </div>
-                                    <input type="range" min="1" max="100" value={userCount} onChange={e => setUserCount(Number(e.target.value))} className="w-full h-3 bg-slate-200 rounded-lg cursor-pointer accent-blue-600" />
-                                </section>
-                            )}
-
-                            {/* Global Tiers */}
-                            {config.enableTiers && (
+                            {/* Global Tiers (Optional via Admin) */}
+                            {config.enableGlobalTiers && (
                                 <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
                                     <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="activity" className="text-blue-500"/> {config.uiText.tiersHeader}</h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                                        {config.tiers.map(t => (
-                                            <button key={t.id} onClick={() => setSelectedTier(t.id)} className={`p-4 rounded-2xl border-2 text-right transition-all ${selectedTier === t.id ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-100 hover:border-slate-200'}`}>
+                                        {config.globalTiers.map(t => (
+                                            <button key={t.id} onClick={() => setSelectedGlobalTier(t.id)} className={`p-4 rounded-2xl border-2 text-right transition-all ${selectedGlobalTier === t.id ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-100 hover:border-slate-200'}`}>
                                                 <div className="font-bold text-slate-700 text-sm">{t.name}</div>
                                                 <div className="text-[10px] text-slate-400 mb-2">עד {t.limit.toLocaleString()}</div>
                                                 <div className="text-xl font-black text-slate-900">${t.price}</div>
@@ -610,13 +685,12 @@
                                     <h2 className="text-2xl font-black uppercase tracking-tight">סיכום אומדן פנימי</h2>
                                 </div>
                                 <div className="p-8 space-y-6">
-                                    {/* Monthly Breakdown */}
+                                    
                                     <div className="space-y-3 pb-6 border-b border-dashed border-slate-200 text-sm">
-                                        <div className="flex justify-between font-bold text-slate-700"><span>מודולים נבחרים</span><span>${totals.modulesMRR.toLocaleString()}</span></div>
-                                        {config.enableUsers && <div className="flex justify-between text-slate-600"><span>משתמשים ({userCount})</span><span>${totals.usersCost.toLocaleString()}</span></div>}
-                                        {config.enableTiers && <div className="flex justify-between text-slate-600"><span>חבילת טרנזקציות</span><span>${(totals.tierObj?.price || 0).toLocaleString()}</span></div>}
+                                        <div className="flex justify-between font-bold text-slate-700"><span>מודולים וחבילות תשתית</span><span>${totals.modulesMRR.toLocaleString()}</span></div>
+                                        {config.enableGlobalTiers && <div className="flex justify-between text-slate-600"><span>חבילת טרנזקציות מערכתית</span><span>${(totals.globalTierObj?.price || 0).toLocaleString()}</span></div>}
                                         
-                                        {/* פירוט מלא של כל התוספות החודשיות */}
+                                        {/* פירוט תוספות חודשיות */}
                                         {totals.mrrBreakdown.map((item, i) => (
                                             <div key={i} className="flex justify-between text-blue-700 bg-blue-50 p-2 rounded text-xs font-bold items-center mt-2">
                                                 <span className="truncate pl-2">{item.label}</span>
@@ -641,7 +715,7 @@
                                             <span className="text-2xl font-black text-orange-700">${totals.totalSetup.toLocaleString()}</span>
                                         </div>
 
-                                        {/* פירוט תוספות חד פעמיות אם יש */}
+                                        {/* פירוט תוספות חד פעמיות */}
                                         {totals.setupBreakdown.length > 0 && (
                                             <div className="mb-3 space-y-1 mt-3 border-t border-orange-200/50 pt-2">
                                                 {totals.setupBreakdown.map((item, i) => (
@@ -681,13 +755,7 @@
                             <div className="flex justify-between items-center p-6 border-b bg-slate-50">
                                 <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800"><Icon name="settings" className="text-blue-600"/> הגדרות מערכת (שינויים נשמרים אוטומטית)</h2>
                                 <div className="flex gap-4">
-                                    <input 
-                                        type="file" 
-                                        accept=".json" 
-                                        style={{display: 'none'}} 
-                                        ref={fileInputRef} 
-                                        onChange={importConfig}
-                                    />
+                                    <input type="file" accept=".json" style={{display: 'none'}} ref={fileInputRef} onChange={importConfig} />
                                     <button onClick={() => fileInputRef.current.click()} className="text-slate-600 hover:bg-slate-200 font-bold text-sm flex items-center gap-1 border border-slate-300 px-3 py-1.5 rounded-lg"><Icon name="upload" size={14}/> ייבוא מגיבוי</button>
                                     <button onClick={exportConfig} className="text-blue-600 hover:bg-blue-50 font-bold text-sm flex items-center gap-1 border border-blue-200 px-3 py-1.5 rounded-lg"><Icon name="download" size={14}/> ייצא לגיבוי</button>
                                     <div className="w-px h-6 bg-slate-300 mx-2"></div>
@@ -700,7 +768,7 @@
                             <div className="flex-grow overflow-y-auto p-8 custom-scroll">
                                 <div className="max-w-5xl mx-auto space-y-12 pb-20">
                                     
-                                    {/* Global Settings & Toggles */}
+                                    {/* Global Settings */}
                                     <div className="grid grid-cols-1 gap-8">
                                         <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
                                             <h3 className="font-bold mb-4 text-orange-800 text-lg border-b border-orange-200 pb-2">הגדרות אומדן פרויקט והקמה גלובליות</h3>
@@ -712,56 +780,79 @@
                                         </div>
                                     </div>
 
-                                    {/* Users Setup */}
+                                    {/* NEW: User Packages Setup (Public / Private) */}
                                     <div className="p-6 bg-white rounded-2xl border shadow-sm">
-                                        <div className="flex justify-between items-center border-b pb-2 mb-4">
-                                            <h3 className="font-bold text-lg text-blue-800">תמחור בסיס לרישוי ולמשתמשים ($)</h3>
-                                            <label className="flex items-center gap-2 text-sm font-bold bg-slate-50 border px-3 py-1.5 rounded-lg cursor-pointer">
-                                                <input type="checkbox" checked={config.enableUsers} onChange={e => updateConfigValue(['enableUsers'], e.target.checked)} className="w-4 h-4 text-blue-600"/> הצג אזור זה במחשבון
-                                            </label>
-                                        </div>
-                                        {config.enableUsers && (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת מותאמת אישית</label>
-                                                    <input value={config.uiText.usersHeader} onChange={e => updateConfigValue(['uiText', 'usersHeader'], e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 font-bold"/>
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">מחיר חודשי ממוצע למשתמש (Seat)</label>
-                                                    <input type="number" className="w-full p-3 border rounded-xl bg-slate-50 font-bold" value={config.basePricePerUser} onChange={e => updateConfigValue(['basePricePerUser'], Number(e.target.value))} />
+                                        <h3 className="font-bold text-xl text-blue-800 border-b pb-3 mb-6">ניהול חבילות רישוי למודולים (Public / Private)</h3>
+                                        
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                            {/* Public Packages */}
+                                            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                                                <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2"><Icon name="globe" size={18}/> חבילות משתמשים - חיבור חיצוני (Public)</h4>
+                                                <div className="space-y-3">
+                                                    {config.publicUserPackages.map((pkg, idx) => (
+                                                        <div key={pkg.id} className="flex gap-2 items-center bg-white p-2 rounded-lg border">
+                                                            <input value={pkg.name} onChange={e => updateConfigValue(['publicUserPackages', idx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded font-bold"/>
+                                                            <input type="number" value={pkg.price} onChange={e => updateConfigValue(['publicUserPackages', idx, 'price'], Number(e.target.value))} className="w-24 p-2 text-sm border rounded font-black"/>
+                                                            <button onClick={() => {
+                                                                const arr = [...config.publicUserPackages];
+                                                                arr.splice(idx, 1);
+                                                                updateConfigValue(['publicUserPackages'], arr);
+                                                            }} className="text-red-400 p-2"><Icon name="x" size={16}/></button>
+                                                        </div>
+                                                    ))}
+                                                    <button onClick={() => addUserPackage('public')} className="text-xs font-bold text-blue-600 bg-white border border-blue-200 px-3 py-1.5 rounded-lg">+ הוסף חבילת Public</button>
                                                 </div>
                                             </div>
-                                        )}
+
+                                            {/* Private Packages */}
+                                            <div className="bg-slate-100 p-4 rounded-xl border border-slate-200">
+                                                <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Icon name="lock" size={18}/> חבילות משתמשים - פנים ארגוני (Private)</h4>
+                                                <div className="space-y-3">
+                                                    {config.privateUserPackages.map((pkg, idx) => (
+                                                        <div key={pkg.id} className="flex gap-2 items-center bg-white p-2 rounded-lg border">
+                                                            <input value={pkg.name} onChange={e => updateConfigValue(['privateUserPackages', idx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded font-bold"/>
+                                                            <input type="number" value={pkg.price} onChange={e => updateConfigValue(['privateUserPackages', idx, 'price'], Number(e.target.value))} className="w-24 p-2 text-sm border rounded font-black"/>
+                                                            <button onClick={() => {
+                                                                const arr = [...config.privateUserPackages];
+                                                                arr.splice(idx, 1);
+                                                                updateConfigValue(['privateUserPackages'], arr);
+                                                            }} className="text-red-400 p-2"><Icon name="x" size={16}/></button>
+                                                        </div>
+                                                    ))}
+                                                    <button onClick={() => addUserPackage('private')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 px-3 py-1.5 rounded-lg">+ הוסף חבילת Private</button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Global Tiers Setup */}
                                     <div className="p-6 bg-white rounded-2xl border shadow-sm">
                                         <div className="flex justify-between items-center border-b pb-2 mb-4">
-                                            <h3 className="font-bold text-lg text-blue-800">חבילות טרנזקציות מערכתיות / מסמכים</h3>
+                                            <h3 className="font-bold text-lg text-slate-800">חבילות טרנזקציות מערכתיות כלליות</h3>
                                             <label className="flex items-center gap-2 text-sm font-bold bg-slate-50 border px-3 py-1.5 rounded-lg cursor-pointer">
-                                                <input type="checkbox" checked={config.enableTiers} onChange={e => updateConfigValue(['enableTiers'], e.target.checked)} className="w-4 h-4 text-blue-600"/> הצג אזור זה במחשבון
+                                                <input type="checkbox" checked={config.enableGlobalTiers} onChange={e => updateConfigValue(['enableGlobalTiers'], e.target.checked)} className="w-4 h-4 text-blue-600"/> הצג אזור זה במחשבון
                                             </label>
                                         </div>
-                                        {config.enableTiers && (
+                                        {config.enableGlobalTiers && (
                                             <div className="space-y-4">
                                                 <div>
                                                     <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת מותאמת אישית</label>
                                                     <input value={config.uiText.tiersHeader} onChange={e => updateConfigValue(['uiText', 'tiersHeader'], e.target.value)} className="w-1/2 p-3 border rounded-xl bg-slate-50 font-bold mb-4"/>
                                                 </div>
                                                 <div className="space-y-3">
-                                                    {config.tiers.map((tier, idx) => (
+                                                    {config.globalTiers.map((tier, idx) => (
                                                         <div key={tier.id} className="flex gap-4 items-end bg-slate-50 p-4 rounded-xl border">
                                                             <div className="flex-grow">
                                                                 <label className="text-[10px] font-bold text-slate-400">שם החבילה</label>
-                                                                <input value={tier.name} onChange={e => updateConfigValue(['tiers', idx, 'name'], e.target.value)} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                                                <input value={tier.name} onChange={e => updateConfigValue(['globalTiers', idx, 'name'], e.target.value)} className="w-full p-2 border rounded-lg font-bold text-sm"/>
                                                             </div>
                                                             <div className="w-32">
-                                                                <label className="text-[10px] font-bold text-slate-400">כמות פעולות/מסמכים</label>
-                                                                <input type="number" value={tier.limit} onChange={e => updateConfigValue(['tiers', idx, 'limit'], Number(e.target.value))} className="w-full p-2 border rounded-lg text-sm"/>
+                                                                <label className="text-[10px] font-bold text-slate-400">כמות פעולות</label>
+                                                                <input type="number" value={tier.limit} onChange={e => updateConfigValue(['globalTiers', idx, 'limit'], Number(e.target.value))} className="w-full p-2 border rounded-lg text-sm"/>
                                                             </div>
                                                             <div className="w-24">
-                                                                <label className="text-[10px] font-bold text-slate-400">מחיר אומדן ($)</label>
-                                                                <input type="number" value={tier.price} onChange={e => updateConfigValue(['tiers', idx, 'price'], Number(e.target.value))} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                                                <label className="text-[10px] font-bold text-slate-400">מחיר ($)</label>
+                                                                <input type="number" value={tier.price} onChange={e => updateConfigValue(['globalTiers', idx, 'price'], Number(e.target.value))} className="w-full p-2 border rounded-lg font-bold text-sm"/>
                                                             </div>
                                                         </div>
                                                     ))}
@@ -773,7 +864,7 @@
                                     {/* Modules Management With Per-Module Tiers & Notes */}
                                     <div>
                                         <h3 className="font-bold text-2xl mb-2 text-slate-800">ניהול מודולים פנימיים ומדרגות עומס</h3>
-                                        <p className="text-sm text-slate-500 mb-6">לכל מודול ניתן להגדיר מדרגות עומס (למשל מספר רשומות בחודש) שישפיעו על אומדן העלות החודשי.</p>
+                                        <p className="text-sm text-slate-500 mb-6">לכל מודול ניתן להגדיר מדרגות עומס שישפיעו על אומדן העלות החודשי.</p>
                                         
                                         <div className="space-y-6">
                                             {config.modules.map((m, idx) => (
@@ -806,7 +897,7 @@
                                                                     value={m.note || ''} 
                                                                     onChange={e => updateConfigValue(['modules', idx, 'note'], e.target.value)} 
                                                                     className="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white outline-none"
-                                                                    placeholder="הזן הערה חופשית (למשל: כולל חיבור ל-API חיצוני)..."
+                                                                    placeholder="הזן הערה חופשית..."
                                                                     rows="2"
                                                                 ></textarea>
                                                             </div>
@@ -833,7 +924,7 @@
                                                         <label className="text-xs font-bold text-blue-800 block mb-2">מדרגות/חבילות עומס למודול זה (MRR):</label>
                                                         {m.tiers?.map((tier, tIdx) => (
                                                             <div key={tier.id} className="flex gap-3 items-center bg-slate-50 p-2 rounded-xl border border-slate-200">
-                                                                <input value={tier.name} onChange={e => updateConfigValue(['modules', idx, 'tiers', tIdx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded bg-white" placeholder="שם המדרגה (למשל: עד 10,000 שורות)"/>
+                                                                <input value={tier.name} onChange={e => updateConfigValue(['modules', idx, 'tiers', tIdx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded bg-white" placeholder="שם המדרגה..."/>
                                                                 <div className="relative w-32">
                                                                     <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-bold">$</span>
                                                                     <input type="number" value={tier.price} onChange={e => updateConfigValue(['modules', idx, 'tiers', tIdx, 'price'], Number(e.target.value))} className="w-full p-2 pl-6 text-sm border rounded font-black text-slate-700 bg-white"/>
@@ -872,7 +963,7 @@
                                     {/* AI Packages */}
                                     <div className="pt-8 border-t">
                                         <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-bold text-xl text-violet-700">שילוב יכולות AI (אופציונלי)</h3>
+                                            <h3 className="font-bold text-xl text-violet-700">שילוב יכולות AI</h3>
                                             <label className="flex items-center gap-2 text-sm font-bold bg-slate-50 border px-3 py-1.5 rounded-lg cursor-pointer">
                                                 <input type="checkbox" checked={config.enableAI} onChange={e => updateConfigValue(['enableAI'], e.target.checked)} className="w-4 h-4 text-violet-600"/> הצג אזור זה במחשבון
                                             </label>
@@ -890,7 +981,7 @@
                                                         <input value={pkg.description} onChange={e => updateConfigValue(['aiPackages', idx, 'description'], e.target.value)} className="w-full md:flex-grow p-2 border rounded-lg text-sm" placeholder="תיאור"/>
                                                         <input type="number" value={pkg.price} onChange={e => updateConfigValue(['aiPackages', idx, 'price'], Number(e.target.value))} className="w-24 p-2 border rounded-lg font-bold text-sm text-center" placeholder="$"/>
                                                         <label className="flex items-center gap-2 text-xs font-bold cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border">
-                                                            <input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['aiPackages', idx, 'isOneTime'], e.target.checked)} className="w-4 h-4"/> חיוב אפיון חד-פעמי
+                                                            <input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['aiPackages', idx, 'isOneTime'], e.target.checked)} className="w-4 h-4"/> חיוב חד-פעמי
                                                         </label>
                                                     </div>
                                                 ))}
@@ -900,7 +991,7 @@
 
                                     {/* Custom Sections */}
                                     <div className="pt-8 border-t">
-                                        <h3 className="font-bold text-xl mb-6 text-slate-800">אזורי אומדן נוספים (שרתים, תמיכה, אינטגרציות וכו')</h3>
+                                        <h3 className="font-bold text-xl mb-6 text-slate-800">אזורי אומדן נוספים (שרתים, תמיכה וכו')</h3>
                                         {config.customSections.map((sec, sIdx) => (
                                             <div key={sec.id} className="mb-8 bg-slate-50 p-6 rounded-3xl border border-slate-200 relative group">
                                                 <button onClick={() => {
@@ -910,7 +1001,7 @@
                                                 }} className="absolute top-6 left-6 text-red-400 hover:text-red-600 bg-white p-2 rounded-lg shadow-sm border transition-opacity"><Icon name="trash-2" size={18}/></button>
                                                 
                                                 <div className="mb-6 w-3/4">
-                                                    <label className="text-xs font-bold text-slate-500 block mb-1">כותרת האזור במחשבון</label>
+                                                    <label className="text-xs font-bold text-slate-500 block mb-1">כותרת האזור</label>
                                                     <input value={sec.title} onChange={e => updateConfigValue(['customSections', sIdx, 'title'], e.target.value)} className="text-2xl font-black bg-white border border-slate-200 rounded-xl w-full p-3 outline-none focus:border-blue-500 focus:ring-2 ring-blue-100"/>
                                                 </div>
                                                 
@@ -963,8 +1054,9 @@
                                     <img src="oneflowlogo.png" alt="ONEFLOW 360 PRO" style={{ height: '45px', marginBottom: '15px' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
                                     <h1 style={{ display: 'none' }}>אומדן עלויות פרויקט: ONEFLOW 360 PRO</h1>
                                     <div className="print-sub-header">
-                                        <p><strong>לקוח / פרויקט:</strong> {clientName || "לא צוין שם פרויקט"}</p>
-                                        <p><strong>תאריך אומדן:</strong> {new Date(quoteDate).toLocaleDateString('he-IL')}</p>
+                                        <p><strong>לקוח / פרויקט:</strong> {clientName || "לא צוין"}</p>
+                                        <p><strong>מיישם עורך האומדן:</strong> {implementerName || "לא צוין"}</p>
+                                        <p><strong>תאריך הפקה:</strong> {new Date(quoteDate).toLocaleDateString('he-IL')}</p>
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'left' }}>
@@ -975,65 +1067,65 @@
                             </div>
 
                             <div className="avoid-break">
-                                <h2>1. אומדן מודולים לתכולת הפרויקט</h2>
+                                <h2>1. אומדן מודולים ותכולת הפרויקט המרכזית</h2>
                                 <table className="print-table">
                                     <thead>
                                         <tr>
-                                            <th>מודול נדרש</th>
-                                            <th>מדרגת עומס / היקף נבחר</th>
-                                            <th style={{textAlign:'center'}}>אומדן חודשי ($)</th>
-                                            <th style={{width:'110px', textAlign:'center'}}>אומדן ימי עבודה</th>
+                                            <th style={{width:'30%'}}>מודול נדרש</th>
+                                            <th style={{width:'15%', textAlign:'center'}}>תצורת גישה</th>
+                                            <th style={{width:'20%'}}>היקף משתמשים מורשים</th>
+                                            <th style={{width:'20%'}}>מדרגת עומס / פעילות</th>
+                                            <th style={{textAlign:'center'}}>אומדן ימים</th>
+                                            <th style={{textAlign:'center'}}>סה"כ חודשי ($)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {totals.selectedModulesDetails.map(m => (
                                             <tr key={m.id}>
-                                                <td style={{fontWeight:'bold'}}>
-                                                    {m.name}
-                                                    {m.note && <div style={{fontSize:'9pt', color:'#64748b', fontWeight:'normal', marginTop:'4px'}}>{m.note}</div>}
+                                                <td>
+                                                    <div style={{fontWeight:'bold', fontSize:'11pt', color:'#1e293b'}}>{m.name}</div>
+                                                    {m.note && <div style={{fontSize:'9pt', color:'#64748b', marginTop:'4px'}}>{m.note}</div>}
                                                 </td>
+                                                <td style={{textAlign:'center'}}>
+                                                    <span className={`badge ${m.accessType === 'public' ? 'badge-public' : 'badge-private'}`}>
+                                                        {m.accessType === 'public' ? 'חיצוני (Public)' : 'פנימי (Private)'}
+                                                    </span>
+                                                </td>
+                                                <td>{m.selectedUserPkgName}</td>
                                                 <td>{m.selectedTierName}</td>
-                                                <td style={{textAlign:'center'}}>${m.monthlyPrice.toLocaleString()}</td>
-                                                <td style={{textAlign:'center'}}>{m.setupDays} ימי הקמה</td>
+                                                <td style={{textAlign:'center', fontWeight:'bold', color:'#ea580c'}}>{m.setupDays}</td>
+                                                <td style={{textAlign:'center', fontWeight:'bold', fontSize:'11pt'}}>${m.monthlyPrice.toLocaleString()}</td>
                                             </tr>
                                         ))}
-                                        <tr style={{backgroundColor:'#f8fafc', fontWeight:'bold'}}>
-                                            <td colSpan="2">סה"כ מודולים וימי אפיון טכני</td>
-                                            <td style={{textAlign:'center', color:'#1e3a8a'}}>${totals.modulesMRR.toLocaleString()}</td>
-                                            <td style={{textAlign:'center', color:'#c2410c'}}>{totals.totalSetupDays} ימי אדם</td>
+                                        <tr style={{backgroundColor:'#f1f5f9', borderTop:'2px solid #cbd5e1'}}>
+                                            <td colSpan="4" style={{fontWeight:'bold', fontSize:'11pt'}}>סה"כ לתשתית מודולים:</td>
+                                            <td style={{textAlign:'center', fontWeight:'bold', color:'#c2410c'}}>{totals.totalSetupDays} ימים</td>
+                                            <td style={{textAlign:'center', fontWeight:'bold', color:'#1e3a8a', fontSize:'12pt'}}>${totals.modulesMRR.toLocaleString()}</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
 
-                            {/* נציג את טבלת הרישוי והתוספות רק אם יש משהו להציג בתוכה */}
-                            {(config.enableUsers || config.enableTiers || (config.enableAI && totals.aiObj.price > 0) || totals.customItems.length > 0) && (
+                            {/* נציג את טבלת התוספות רק אם יש משהו להציג בתוכה */}
+                            {(config.enableGlobalTiers || (config.enableAI && totals.aiObj.price > 0) || totals.customItems.length > 0) && (
                                 <div className="avoid-break">
-                                    <h2>2. אומדן רישוי, רכיבי תשתית ותוספות</h2>
+                                    <h2>2. שירותים גלובליים ותוספות מערכת</h2>
                                     <table className="print-table">
                                         <thead>
                                             <tr>
                                                 <th>רכיב / שירות משלים</th>
                                                 <th>פירוט היקף</th>
-                                                <th style={{textAlign:'center'}}>סוג אומדן</th>
-                                                <th style={{textAlign:'center'}}>עלות ($)</th>
+                                                <th style={{textAlign:'center', width:'100px'}}>סוג אומדן</th>
+                                                <th style={{textAlign:'center', width:'100px'}}>עלות ($)</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {config.enableUsers && (
+                                            {config.enableGlobalTiers && (
                                                 <tr>
-                                                    <td style={{fontWeight:'bold'}}>רישוי משתמשי מערכת</td>
-                                                    <td>{userCount} רשיונות (Seats)</td>
+                                                    <td style={{fontWeight:'bold'}}>חבילת טרנזקציות ומסמכים גלובלית</td>
+                                                    <td>{totals.globalTierObj.name} (עד {totals.globalTierObj.limit.toLocaleString()})</td>
                                                     <td style={{textAlign:'center'}}><span className="badge">חודשי (MRR)</span></td>
-                                                    <td style={{textAlign:'center'}}>${totals.usersCost.toLocaleString()}</td>
-                                                </tr>
-                                            )}
-                                            {config.enableTiers && (
-                                                <tr>
-                                                    <td style={{fontWeight:'bold'}}>חבילת טרנזקציות ומסמכים</td>
-                                                    <td>{totals.tierObj.name} (עד {totals.tierObj.limit.toLocaleString()})</td>
-                                                    <td style={{textAlign:'center'}}><span className="badge">חודשי (MRR)</span></td>
-                                                    <td style={{textAlign:'center'}}>${totals.tierObj.price.toLocaleString()}</td>
+                                                    <td style={{textAlign:'center', fontWeight:'bold'}}>${totals.globalTierObj.price.toLocaleString()}</td>
                                                 </tr>
                                             )}
                                             {/* AI Row */}
@@ -1043,10 +1135,10 @@
                                                     <td>{totals.aiObj.description}</td>
                                                     <td style={{textAlign:'center'}}>
                                                         <span className="badge" style={{backgroundColor: totals.aiObj.isOneTime ? '#fff7ed' : '#eff6ff', color: totals.aiObj.isOneTime ? '#c2410c' : '#1e40af'}}>
-                                                            {totals.aiObj.isOneTime ? 'חד-פעמי (Setup)' : 'חודשי (MRR)'}
+                                                            {totals.aiObj.isOneTime ? 'חד-פעמי' : 'חודשי'}
                                                         </span>
                                                     </td>
-                                                    <td style={{textAlign:'center'}}>${totals.aiObj.price.toLocaleString()}</td>
+                                                    <td style={{textAlign:'center', fontWeight:'bold'}}>${totals.aiObj.price.toLocaleString()}</td>
                                                 </tr>
                                             )}
                                             {/* Custom Rows */}
@@ -1056,10 +1148,10 @@
                                                     <td>{item.description || 'ללא פירוט נוסף'}</td>
                                                     <td style={{textAlign:'center'}}>
                                                         <span className="badge" style={{backgroundColor: item.isOneTime ? '#fff7ed' : '#eff6ff', color: item.isOneTime ? '#c2410c' : '#1e40af'}}>
-                                                            {item.isOneTime ? 'חד-פעמי (Setup)' : 'חודשי (MRR)'}
+                                                            {item.isOneTime ? 'חד-פעמי' : 'חודשי'}
                                                         </span>
                                                     </td>
-                                                    <td style={{textAlign:'center'}}>${item.price.toLocaleString()}</td>
+                                                    <td style={{textAlign:'center', fontWeight:'bold'}}>${item.price.toLocaleString()}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -1073,27 +1165,27 @@
                                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'20px'}}>
                                     <div style={{fontSize:'14pt', fontWeight:'bold'}}>סה"כ אומדן חיוב חודשי קבוע (MRR):</div>
                                     <div style={{textAlign:'left'}}>
-                                        <div style={{fontSize:'22pt', fontWeight:'900', color:'#1e3a8a', lineHeight:1}}>${totals.totalMRR.toLocaleString()}</div>
-                                        <div style={{fontSize:'11pt', color:'#64748b'}}>≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
+                                        <div style={{fontSize:'24pt', fontWeight:'900', color:'#1e3a8a', lineHeight:1}}>${totals.totalMRR.toLocaleString()}</div>
+                                        <div style={{fontSize:'11pt', color:'#64748b', marginTop:'5px'}}>≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
                                     </div>
                                 </div>
 
-                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', paddingTop:'20px', borderTop:'1px dashed #94a3b8'}}>
+                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', paddingTop:'20px', borderTop:'2px dashed #cbd5e1'}}>
                                     <div>
                                         <div style={{fontSize:'14pt', fontWeight:'bold', color:'#c2410c'}}>סה"כ אומדן עלות הקמה ופיתוח חד-פעמית (Setup):</div>
-                                        <div style={{fontSize:'10pt', color:'#ea580c', marginTop:'5px'}}>נגזר משעות עבודה מוערכות: ({totals.totalSetupDays} ימי עבודה של מיישם/מפתח)</div>
+                                        <div style={{fontSize:'11pt', color:'#ea580c', marginTop:'5px'}}>נגזר משעות עבודה מוערכות: ({totals.totalSetupDays} ימי עבודה של מיישם/מפתח)</div>
                                     </div>
                                     <div style={{textAlign:'left'}}>
-                                        <div style={{fontSize:'22pt', fontWeight:'900', color:'#c2410c', lineHeight:1}}>${totals.totalSetup.toLocaleString()}</div>
-                                        <div style={{fontSize:'11pt', color:'#9a3412'}}>≈ {Math.round(totals.nisSetup).toLocaleString()} ₪</div>
+                                        <div style={{fontSize:'24pt', fontWeight:'900', color:'#c2410c', lineHeight:1}}>${totals.totalSetup.toLocaleString()}</div>
+                                        <div style={{fontSize:'11pt', color:'#9a3412', marginTop:'5px'}}>≈ {Math.round(totals.nisSetup).toLocaleString()} ₪</div>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="avoid-break" style={{marginTop:'50px', textAlign:'center', fontSize:'10pt', color:'#64748b', borderTop:'1px solid #e2e8f0', paddingTop:'20px'}}>
-                                <p style={{fontWeight:'bold', color:'#ef4444'}}>אומדן זה מיועד לשימוש פנימי בלבד לשם הערכת עלויות טרם הפקת הצעת מחיר רשמית ללקוח.</p>
-                                <p className="mt-1">אומדן המחירים אינו כולל מע"מ | מחושב לפי שער המרה פנימי של: {config.exchangeRate} ₪</p>
-                                <p style={{fontWeight:'bold', marginTop:'10px'}}>ONEFLOW PRO ERP Hybrid Infrastructure - Internal Pricing Tool</p>
+                                <p style={{fontWeight:'bold', color:'#ef4444', fontSize:'12pt'}}>מסמך אומדן זה מיועד לשימוש פנימי בלבד לשם הערכת עלויות טרם הפקת הצעת מחיר רשמית.</p>
+                                <p className="mt-2">המחירים אינם כוללים מע"מ | מחושב לפי שער המרה פנימי של: {config.exchangeRate} ₪</p>
+                                <p style={{fontWeight:'bold', marginTop:'10px', color:'#1e293b'}}>ONEFLOW PRO ERP Hybrid Infrastructure - Internal Pricing Tool</p>
                             </div>
                         </div>
                     </div>

@@ -457,8 +457,27 @@
                     try {
                         const parsedData = JSON.parse(e.target.result);
                         if (parsedData && parsedData.modules) {
+                            // --- מיגרציה: התאמת קובץ ישן למבנה החדש ---
+                            if (parsedData.enableUsers === undefined) parsedData.enableUsers = true;
+                            if (parsedData.enableGlobalTiers === undefined && parsedData.enableTiers === undefined) {
+                                parsedData.enableGlobalTiers = true;
+                            } else if (parsedData.enableGlobalTiers === undefined) {
+                                parsedData.enableGlobalTiers = parsedData.enableTiers; // תמיכה במפתח הישן
+                            }
+                            if (parsedData.enableAI === undefined) parsedData.enableAI = true;
+
+                            if (!parsedData.publicUserPackages) parsedData.publicUserPackages = DEFAULT_CONFIG.publicUserPackages;
+                            if (!parsedData.privateUserPackages) parsedData.privateUserPackages = DEFAULT_CONFIG.privateUserPackages;
+                            if (!parsedData.globalTiers) parsedData.globalTiers = parsedData.tiers || DEFAULT_CONFIG.globalTiers;
+
+                            parsedData.modules = parsedData.modules.map(m => ({
+                                ...m,
+                                tiers: m.tiers && m.tiers.length > 0 ? m.tiers : generateDefaultTiers(m.id),
+                                note: m.note || ''
+                            }));
+
                             setConfig(parsedData);
-                            alert("ההגדרות נטענו בהצלחה!");
+                            alert("ההגדרות נטענו והותאמו לגרסה החדשה בהצלחה!");
                         } else {
                             alert("קובץ לא חוקי או פגום.");
                         }

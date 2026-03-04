@@ -403,7 +403,16 @@
                     setConfig(DEFAULT_CONFIG);
                 }
             };
-
+// פונקציה לייצוא הנתונים
+const exportConfig = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href",     dataStr);
+    downloadAnchorNode.setAttribute("download", "oneflow_calculator_backup.json");
+    document.body.appendChild(downloadAnchorNode); // required for firefox
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+};
             // --- Render Components ---
             const ModuleButton = ({ module, isSelected }) => (
                 <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}>
@@ -643,6 +652,17 @@
                             <div className="flex justify-between items-center p-6 border-b bg-slate-50">
                                 <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800"><Icon name="settings" className="text-blue-600"/> הגדרות מערכת (שינויים נשמרים אוטומטית)</h2>
                                 <div className="flex gap-4">
+
+                                    {/* חפש את השורה הזו (או דומה לה) בפאנל הניהול: */}
+<div className="flex gap-4">
+
+    {/* הוסף את השורה הזו: */}
+    <button onClick={exportConfig} className="text-blue-600 hover:bg-blue-50 font-bold text-sm flex items-center gap-1 border border-blue-200 px-3 py-1.5 rounded-lg"><Icon name="download" size={14}/> ייצא לגיבוי</button>
+
+    {/* אלו הכפתורים שכבר קיימים אצלך: */}
+    <button onClick={resetConfig} className="text-red-500 font-bold text-sm flex items-center gap-1 bg-white border border-red-200 px-3 py-1.5 rounded-lg"><Icon name="rotate-ccw" size={14}/> איפוס מוחלט</button>
+    <button onClick={() => setIsAdminOpen(false)} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold">סגור חלון</button>
+</div>
                                     <button onClick={resetAdminConfig} className="text-red-500 font-bold text-sm flex items-center gap-1 bg-white border border-red-200 px-3 py-1.5 rounded-lg"><Icon name="rotate-ccw" size={14}/> איפוס מוחלט</button>
                                     <button onClick={() => setIsAdminOpen(false)} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold">סגור חלון ניהול</button>
                                 </div>
@@ -1059,3 +1079,4 @@
     </script>
 </body>
 </html>
+

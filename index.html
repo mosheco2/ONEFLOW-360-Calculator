@@ -288,31 +288,7 @@
 
             const handlePrint = () => window.print();
 
-            // פונקציית "נקה בחירות" למשתמש
-            const clearUserSelections = () => {
-                if(confirm('האם אתה בטוח שברצונך לנקות את כל הבחירות ולהתחיל מחדש?')) {
-                    setClientName('');
-                    setQuoteDate(new Date().toISOString().split('T')[0]);
-                    setSelectedModules([]);
-                    setModuleTiers({});
-                    setUserCount(5);
-                    setSelectedAI('none');
-                    setCustomSelections({});
-                }
-            };
-
-            const toggleModule = (id) => {
-                setSelectedModules(prev => {
-                    if (prev.includes(id)) {
-                        const newTiers = { ...moduleTiers };
-                        delete newTiers[id];
-                        setModuleTiers(newTiers);
-                        return prev.filter(m => m !== id);
-                    } else {
-                        return [...prev, id];
-                    }
-                });
-            };
+            const toggleModule = (id) => setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
             
             // --- Admin Helpers ---
             const updateConfigValue = (path, val) => {
@@ -321,6 +297,30 @@
                for(let i=0; i<path.length-1; i++) current = current[path[i]];
                current[path[path.length-1]] = val;
                setConfig(newConfig);
+            };
+
+            const duplicateModule = (moduleId) => {
+                const moduleToCopy = config.modules.find(m => m.id === moduleId);
+                if (!moduleToCopy) return;
+
+                const newModuleId = "mod_" + Date.now();
+                // יצירת עותק עמוק של המודול
+                const copiedModule = JSON.parse(JSON.stringify(moduleToCopy));
+                
+                copiedModule.id = newModuleId;
+                copiedModule.name = `${copiedModule.name} (עותק)`;
+                
+                // עדכון מזהים למדרגות כדי למנוע התנגשויות
+                if (copiedModule.tiers) {
+                    copiedModule.tiers.forEach((t, idx) => {
+                        t.id = `t_${Date.now()}_${idx}`;
+                    });
+                }
+
+                setConfig(prev => ({
+                    ...prev,
+                    modules: [...prev.modules, copiedModule]
+                }));
             };
 
             const addNewModule = () => {
@@ -622,12 +622,15 @@
                                                             <input type="number" value={m.setupDays} onChange={e => updateConfigValue(['modules', idx, 'setupDays'], Number(e.target.value))} className="w-full p-2 bg-slate-50 border rounded-lg text-center font-bold"/>
                                                         </div>
                                                         
-                                                        <button onClick={() => {
-                                                            if(confirm('למחוק מודול זה?')) {
-                                                                const newMods = config.modules.filter(x => x.id !== m.id);
-                                                                updateConfigValue(['modules'], newMods);
-                                                            }
-                                                        }} className="text-red-400 hover:text-red-600 bg-red-50 p-3 rounded-lg"><Icon name="trash-2" size={20}/></button>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => duplicateModule(m.id)} className="text-blue-500 hover:text-blue-700 bg-blue-50 p-3 rounded-lg transition-colors" title="שכפל מודול"><Icon name="copy" size={20}/></button>
+                                                            <button onClick={() => {
+                                                                if(confirm('למחוק מודול זה?')) {
+                                                                    const newMods = config.modules.filter(x => x.id !== m.id);
+                                                                    updateConfigValue(['modules'], newMods);
+                                                                }
+                                                            }} className="text-red-400 hover:text-red-600 bg-red-50 p-3 rounded-lg transition-colors" title="מחק מודול"><Icon name="trash-2" size={20}/></button>
+                                                        </div>
                                                     </div>
 
                                                     {/* Module Tiers */}

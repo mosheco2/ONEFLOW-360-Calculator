@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ONEFLOW 360 PRO Calculator</title>
+    <title>ONEFLOW 360 - אומדן עלויות פרויקט</title>
     
     <!-- טעינת ספריות חיצוניות (גרסה יציבה) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -33,8 +33,11 @@
 
         /* --- הגדרות הדפסה (PDF) משודרגות --- */
         @media print {
-            @page { size: A4; margin: 10mm; }
-            body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            @page { 
+                size: A4; 
+                margin: 15mm 10mm; /* מרווחים גדולים יותר למעלה ולמטה כדי למנוע חיתוך */
+            }
+            body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
             
             /* הסתרת כל מה שלא קשור להדפסה */
             .no-print, header, button, .admin-modal, .mobile-bar { display: none !important; }
@@ -52,21 +55,28 @@
 
             .print-container { padding: 0 10px; }
             
+            /* מניעת חיתוך אלמנטים במעברי עמוד */
+            .avoid-break {
+                page-break-inside: avoid;
+                break-inside: avoid;
+                margin-bottom: 30px;
+            }
+
             h1 { font-size: 24pt !important; font-weight: 900 !important; color: #1e3a8a !important; margin: 0; }
-            .print-sub-header { color: #64748b !important; font-size: 11pt !important; }
+            .print-sub-header { color: #64748b !important; font-size: 11pt !important; margin-top: 10px; }
             
             h2 { 
                 font-size: 16pt !important; 
                 font-weight: 800 !important; 
                 color: #1e293b !important; 
-                margin-top: 25px !important; 
+                margin-top: 0 !important; 
                 margin-bottom: 10px !important; 
                 border-bottom: 2px solid #e2e8f0 !important;
                 padding-bottom: 5px !important;
             }
 
             /* טבלה נקייה */
-            table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 10pt; }
+            table { width: 100%; border-collapse: collapse; font-size: 10pt; }
             th { background-color: #f1f5f9 !important; padding: 8px; text-align: right; font-weight: 800; border: 1px solid #e2e8f0; }
             td { padding: 8px; border: 1px solid #e2e8f0; vertical-align: top; }
             
@@ -76,7 +86,6 @@
                 border: 2px solid #cbd5e1 !important;
                 border-radius: 12px;
                 padding: 15px;
-                break-inside: avoid;
             }
 
             .badge { 
@@ -129,11 +138,11 @@
             setupHourlyRate: 350,
             setupHoursPerDay: 9,
             uiText: {
-                modulesHeader: "רכיב א': מודולים פעילים",
-                usersHeader: "רכיב ב': משתמשים",
-                tiersHeader: "רכיב ג': חבילת טרנזקציות",
-                moduleTiersHeader: "הגדרת מדרגות למודולים שנבחרו",
-                aiHeader: "רכיב ד': כוח AI",
+                modulesHeader: "רכיב א': מודולים נדרשים",
+                usersHeader: "רכיב ב': רישוי משתמשים",
+                tiersHeader: "רכיב ג': טרנזקציות ומסמכים",
+                moduleTiersHeader: "הגדרת מדרגות עומס למודולים",
+                aiHeader: "רכיב ד': שילוב AI",
             },
             modules: [
                 { id: 'sales', name: 'מכירות', icon: 'shopping-cart', setupDays: 3, note: '', tiers: generateDefaultTiers('sales') },
@@ -157,7 +166,7 @@
         };
 
         function App() {
-            const STORAGE_KEY = 'oneflow_pro_v_modules_notes_01';
+            const STORAGE_KEY = 'oneflow_pro_v_internal_estimator_01';
 
             // --- State ---
             const [config, setConfig] = useState(() => {
@@ -182,11 +191,11 @@
                 } catch { return DEFAULT_CONFIG; }
             });
 
-            // נתוני הצעת מחיר (משתמש)
+            // נתוני אומדן (לשימוש פנימי)
             const [clientName, setClientName] = useState('');
             const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split('T')[0]);
             
-            // בחירות המשתמש
+            // בחירות המיישם
             const [selectedModules, setSelectedModules] = useState(['sales', 'inventory']);
             const [moduleTiers, setModuleTiers] = useState({}); 
             const [userCount, setUserCount] = useState(5);
@@ -307,9 +316,9 @@
 
             const handlePrint = () => window.print();
 
-            // תיקון שגיאת נקה בחירות - שימוש בפונקציה מסודרת בחלל המתאים
+            // פונקציית ניקוי מסודרת
             function clearUserSelections() {
-                if(window.confirm('האם אתה בטוח שברצונך לנקות את כל הבחירות ולהתחיל מחדש?')) {
+                if(window.confirm('האם אתה בטוח שברצונך לנקות את כל הבחירות ולהתחיל פרויקט חדש?')) {
                     setClientName('');
                     setQuoteDate(new Date().toISOString().split('T')[0]);
                     setSelectedModules([]);
@@ -401,7 +410,7 @@
                     <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}><Icon name={module.icon} size={24} /></div>
                     <span className="text-sm font-bold text-center">{module.name}</span>
                     {module.note && <span className="text-[10px] text-slate-400 mt-1 text-center leading-tight line-clamp-2">{module.note}</span>}
-                    {module.setupDays > 0 && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 rounded mt-2">{module.setupDays} ימי הקמה</span>}
+                    {module.setupDays > 0 && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 rounded mt-2">{module.setupDays} ימי אפיון והקמה</span>}
                     {isSelected && <div className="absolute top-2 right-2 text-blue-600"><Icon name="check-circle-2" size={16} /></div>}
                 </button>
             );
@@ -412,11 +421,18 @@
                     {/* Header */}
                     <header className="no-print sticky top-0 z-50 bg-white border-b shadow-sm h-16 flex items-center justify-between px-6">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-xl">1</div>
-                            <h1 className="text-xl font-bold hidden sm:block">ONEFLOW <span className="text-blue-600">360 PRO</span></h1>
+                            {/* לוגו מוצר במסך הראשי */}
+                            <img 
+                                src="oneflowlogo.png" 
+                                alt="ONEFLOW 360 PRO" 
+                                className="h-8 object-contain"
+                                onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }}
+                            />
+                            <div style={{display:'none'}} className="text-xl font-bold">ONEFLOW <span className="text-blue-600">360 PRO</span></div>
+                            <span className="text-sm font-medium text-slate-400 border-r-2 border-slate-200 pr-3 hidden md:block">מחשבון אומדן פרויקטים למיישם</span>
                         </div>
                         <div className="flex items-center gap-3">
-                             <input type="text" placeholder="שם הלקוח להצעה" value={clientName} onChange={e => setClientName(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm w-48 bg-slate-50" />
+                             <input type="text" placeholder="שם פרויקט / לקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm w-48 bg-slate-50" />
                              <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm bg-slate-50" />
                              
                              <button onClick={clearUserSelections} className="flex items-center gap-1 p-2 text-sm font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
@@ -435,7 +451,7 @@
                             
                             {/* Mobile Inputs */}
                             <div className="md:hidden space-y-2">
-                                <input type="text" placeholder="שם הלקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="w-full p-3 border rounded-xl" />
+                                <input type="text" placeholder="שם פרויקט / לקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="w-full p-3 border rounded-xl" />
                                 <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="w-full p-3 border rounded-xl" />
                             </div>
 
@@ -553,7 +569,7 @@
                              
                              <div className="lg:sticky lg:top-24 bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden">
                                 <div className="bg-slate-900 text-white p-8">
-                                    <h2 className="text-2xl font-black uppercase tracking-tight">סיכום הצעה</h2>
+                                    <h2 className="text-2xl font-black uppercase tracking-tight">סיכום אומדן פנימי</h2>
                                 </div>
                                 <div className="p-8 space-y-6">
                                     {/* Monthly Breakdown */}
@@ -574,7 +590,7 @@
                                     {/* MRR */}
                                     <div>
                                         <div className="flex justify-between items-end mb-1">
-                                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">חודשי קבוע (MRR)</span>
+                                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">אומדן חודשי קבוע (MRR)</span>
                                             <span className="text-4xl font-black text-slate-900 leading-none">${totals.totalMRR.toLocaleString()}</span>
                                         </div>
                                         <div className="text-left text-xs font-bold text-slate-400">≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
@@ -583,7 +599,7 @@
                                     {/* SETUP */}
                                     <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
                                         <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs font-black text-orange-800 uppercase tracking-wide">הקמה חד-פעמית</span>
+                                            <span className="text-xs font-black text-orange-800 uppercase tracking-wide">הקמה ואפיון (Setup)</span>
                                             <span className="text-2xl font-black text-orange-700">${totals.totalSetup.toLocaleString()}</span>
                                         </div>
 
@@ -605,7 +621,7 @@
                                     </div>
 
                                     <button onClick={handlePrint} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-xl shadow-lg flex items-center justify-center gap-2">
-                                        <Icon name="file-text"/> צור PDF
+                                        <Icon name="file-text"/> הפק אומדן (PDF)
                                     </button>
                                 </div>
                             </div>
@@ -615,7 +631,7 @@
                     {/* Mobile Floating Button */}
                     <div className="no-print fixed bottom-4 left-4 right-4 lg:hidden z-40">
                         <button onClick={() => setShowSummary(true)} className="w-full bg-slate-900 text-white p-4 rounded-full shadow-2xl flex justify-between font-bold border border-slate-700">
-                            <span>סיכום עסקה</span>
+                            <span>סיכום אומדן</span>
                             <span>${totals.totalMRR.toLocaleString()} /חודש</span>
                         </button>
                     </div>
@@ -625,7 +641,7 @@
                         <div className="admin-modal fixed inset-0 z-[60] bg-white overflow-hidden flex flex-col">
                             {/* Admin Header */}
                             <div className="flex justify-between items-center p-6 border-b bg-slate-50">
-                                <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800"><Icon name="settings" className="text-blue-600"/> הגדרות מערכת מתקדמות</h2>
+                                <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800"><Icon name="settings" className="text-blue-600"/> הגדרות מערכת (שינויים נשמרים אוטומטית)</h2>
                                 <div className="flex gap-4">
                                     <button onClick={resetAdminConfig} className="text-red-500 font-bold text-sm flex items-center gap-1 bg-white border border-red-200 px-3 py-1.5 rounded-lg"><Icon name="rotate-ccw" size={14}/> איפוס מוחלט</button>
                                     <button onClick={() => setIsAdminOpen(false)} className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold">סגור חלון ניהול</button>
@@ -639,10 +655,10 @@
                                     {/* Global Settings & Toggles */}
                                     <div className="grid grid-cols-1 gap-8">
                                         <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
-                                            <h3 className="font-bold mb-4 text-orange-800 text-lg border-b border-orange-200 pb-2">הגדרות פרויקט והקמה גלובליות</h3>
+                                            <h3 className="font-bold mb-4 text-orange-800 text-lg border-b border-orange-200 pb-2">הגדרות אומדן פרויקט והקמה גלובליות</h3>
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                                 <div><label className="text-xs font-bold text-orange-700 mb-1 block">תעריף שעה ($)</label><input type="number" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.setupHourlyRate} onChange={e => updateConfigValue(['setupHourlyRate'], Number(e.target.value))} /></div>
-                                                <div><label className="text-xs font-bold text-orange-700 mb-1 block">שעות ביום</label><input type="number" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.setupHoursPerDay} onChange={e => updateConfigValue(['setupHoursPerDay'], Number(e.target.value))} /></div>
+                                                <div><label className="text-xs font-bold text-orange-700 mb-1 block">שעות ביום עבודה</label><input type="number" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.setupHoursPerDay} onChange={e => updateConfigValue(['setupHoursPerDay'], Number(e.target.value))} /></div>
                                                 <div><label className="text-xs font-bold text-orange-700 mb-1 block">שער דולר (₪)</label><input type="number" step="0.1" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.exchangeRate} onChange={e => updateConfigValue(['exchangeRate'], Number(e.target.value))} /></div>
                                             </div>
                                         </div>
@@ -659,11 +675,11 @@
                                         {config.enableUsers && (
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת למשתמש</label>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת מותאמת אישית</label>
                                                     <input value={config.uiText.usersHeader} onChange={e => updateConfigValue(['uiText', 'usersHeader'], e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 font-bold"/>
                                                 </div>
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">מחיר חודשי למשתמש (Seat)</label>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">מחיר חודשי ממוצע למשתמש (Seat)</label>
                                                     <input type="number" className="w-full p-3 border rounded-xl bg-slate-50 font-bold" value={config.basePricePerUser} onChange={e => updateConfigValue(['basePricePerUser'], Number(e.target.value))} />
                                                 </div>
                                             </div>
@@ -673,7 +689,7 @@
                                     {/* Global Tiers Setup */}
                                     <div className="p-6 bg-white rounded-2xl border shadow-sm">
                                         <div className="flex justify-between items-center border-b pb-2 mb-4">
-                                            <h3 className="font-bold text-lg text-blue-800">חבילות טרנזקציות מערכתיות (Tiers)</h3>
+                                            <h3 className="font-bold text-lg text-blue-800">חבילות טרנזקציות מערכתיות / מסמכים</h3>
                                             <label className="flex items-center gap-2 text-sm font-bold bg-slate-50 border px-3 py-1.5 rounded-lg cursor-pointer">
                                                 <input type="checkbox" checked={config.enableTiers} onChange={e => updateConfigValue(['enableTiers'], e.target.checked)} className="w-4 h-4 text-blue-600"/> הצג אזור זה במחשבון
                                             </label>
@@ -681,7 +697,7 @@
                                         {config.enableTiers && (
                                             <div className="space-y-4">
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת למשתמש</label>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת מותאמת אישית</label>
                                                     <input value={config.uiText.tiersHeader} onChange={e => updateConfigValue(['uiText', 'tiersHeader'], e.target.value)} className="w-1/2 p-3 border rounded-xl bg-slate-50 font-bold mb-4"/>
                                                 </div>
                                                 <div className="space-y-3">
@@ -692,11 +708,11 @@
                                                                 <input value={tier.name} onChange={e => updateConfigValue(['tiers', idx, 'name'], e.target.value)} className="w-full p-2 border rounded-lg font-bold text-sm"/>
                                                             </div>
                                                             <div className="w-32">
-                                                                <label className="text-[10px] font-bold text-slate-400">כמות פעולות</label>
+                                                                <label className="text-[10px] font-bold text-slate-400">כמות פעולות/מסמכים</label>
                                                                 <input type="number" value={tier.limit} onChange={e => updateConfigValue(['tiers', idx, 'limit'], Number(e.target.value))} className="w-full p-2 border rounded-lg text-sm"/>
                                                             </div>
                                                             <div className="w-24">
-                                                                <label className="text-[10px] font-bold text-slate-400">מחיר ($)</label>
+                                                                <label className="text-[10px] font-bold text-slate-400">מחיר אומדן ($)</label>
                                                                 <input type="number" value={tier.price} onChange={e => updateConfigValue(['tiers', idx, 'price'], Number(e.target.value))} className="w-full p-2 border rounded-lg font-bold text-sm"/>
                                                             </div>
                                                         </div>
@@ -708,8 +724,8 @@
 
                                     {/* Modules Management With Per-Module Tiers & Notes */}
                                     <div>
-                                        <h3 className="font-bold text-2xl mb-2 text-slate-800">ניהול מודולים ומדרגות תמחור פנימיות</h3>
-                                        <p className="text-sm text-slate-500 mb-6">עבור כל מודול ניתן להגדיר מדרגות שונות לבחירת הלקוח ולהוסיף הערות חופשיות.</p>
+                                        <h3 className="font-bold text-2xl mb-2 text-slate-800">ניהול מודולים פנימיים ומדרגות עומס</h3>
+                                        <p className="text-sm text-slate-500 mb-6">לכל מודול ניתן להגדיר מדרגות עומס (למשל מספר רשומות בחודש) שישפיעו על אומדן העלות החודשי.</p>
                                         
                                         <div className="space-y-6">
                                             {config.modules.map((m, idx) => (
@@ -737,26 +753,26 @@
                                                                 <input value={m.name} onChange={e => updateConfigValue(['modules', idx, 'name'], e.target.value)} className="w-full p-2 bg-transparent border-b-2 border-slate-200 focus:border-blue-500 outline-none font-black text-lg text-slate-800"/>
                                                             </div>
                                                             <div>
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase">הערה / תיאור (יופיע למשתמש וב-PDF)</label>
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase">הערה / תיאור פנימי (יופיע למיישם וב-PDF)</label>
                                                                 <textarea 
                                                                     value={m.note || ''} 
                                                                     onChange={e => updateConfigValue(['modules', idx, 'note'], e.target.value)} 
                                                                     className="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white outline-none"
-                                                                    placeholder="הזן הערה חופשית..."
+                                                                    placeholder="הזן הערה חופשית (למשל: כולל חיבור ל-API חיצוני)..."
                                                                     rows="2"
                                                                 ></textarea>
                                                             </div>
                                                         </div>
                                                         
                                                         <div className="w-24">
-                                                            <label className="text-[10px] font-bold text-slate-400 uppercase">ימי הקמה</label>
+                                                            <label className="text-[10px] font-bold text-slate-400 uppercase">ימי אפיון והקמה</label>
                                                             <input type="number" value={m.setupDays} onChange={e => updateConfigValue(['modules', idx, 'setupDays'], Number(e.target.value))} className="w-full p-2 bg-slate-50 border rounded-lg text-center font-bold"/>
                                                         </div>
                                                         
                                                         <div className="flex gap-2">
                                                             <button onClick={() => duplicateModule(m.id)} className="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded-lg transition-colors" title="שכפל מודול"><Icon name="copy" size={18}/></button>
                                                             <button onClick={() => {
-                                                                if(confirm('למחוק מודול זה?')) {
+                                                                if(window.confirm('למחוק מודול זה?')) {
                                                                     const newMods = config.modules.filter(x => x.id !== m.id);
                                                                     updateConfigValue(['modules'], newMods);
                                                                 }
@@ -766,7 +782,7 @@
 
                                                     {/* Module Tiers */}
                                                     <div className="pl-4 border-r-4 border-blue-200 space-y-3 mr-4">
-                                                        <label className="text-xs font-bold text-blue-800 block mb-2">מדרגות/חבילות למודול זה (MRR):</label>
+                                                        <label className="text-xs font-bold text-blue-800 block mb-2">מדרגות/חבילות עומס למודול זה (MRR):</label>
                                                         {m.tiers?.map((tier, tIdx) => (
                                                             <div key={tier.id} className="flex gap-3 items-center bg-slate-50 p-2 rounded-xl border border-slate-200">
                                                                 <input value={tier.name} onChange={e => updateConfigValue(['modules', idx, 'tiers', tIdx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded bg-white" placeholder="שם המדרגה (למשל: עד 10,000 שורות)"/>
@@ -794,7 +810,7 @@
                                         {/* Add Module */}
                                         <div className="flex gap-4 bg-slate-100 p-6 rounded-2xl border border-dashed border-slate-300 items-end mt-6">
                                             <div className="flex-grow">
-                                                <label className="text-xs font-bold text-slate-600 mb-1 block">הקמת מודול חדש</label>
+                                                <label className="text-xs font-bold text-slate-600 mb-1 block">הקמת מודול פנימי חדש</label>
                                                 <input value={newModule.name} onChange={e => setNewModule({...newModule, name: e.target.value})} className="w-full p-3 border rounded-xl bg-white" placeholder="שם המודול..."/>
                                             </div>
                                             <div className="w-32">
@@ -808,7 +824,7 @@
                                     {/* AI Packages */}
                                     <div className="pt-8 border-t">
                                         <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-bold text-xl text-violet-700">חבילות AI מובנות</h3>
+                                            <h3 className="font-bold text-xl text-violet-700">שילוב יכולות AI (אופציונלי)</h3>
                                             <label className="flex items-center gap-2 text-sm font-bold bg-slate-50 border px-3 py-1.5 rounded-lg cursor-pointer">
                                                 <input type="checkbox" checked={config.enableAI} onChange={e => updateConfigValue(['enableAI'], e.target.checked)} className="w-4 h-4 text-violet-600"/> הצג אזור זה במחשבון
                                             </label>
@@ -817,7 +833,7 @@
                                         {config.enableAI && (
                                             <div className="space-y-3">
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת למשתמש</label>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת מותאמת אישית</label>
                                                     <input value={config.uiText.aiHeader} onChange={e => updateConfigValue(['uiText', 'aiHeader'], e.target.value)} className="w-1/2 p-3 border rounded-xl bg-slate-50 font-bold mb-4"/>
                                                 </div>
                                                 {config.aiPackages.map((pkg, idx) => (
@@ -826,7 +842,7 @@
                                                         <input value={pkg.description} onChange={e => updateConfigValue(['aiPackages', idx, 'description'], e.target.value)} className="w-full md:flex-grow p-2 border rounded-lg text-sm" placeholder="תיאור"/>
                                                         <input type="number" value={pkg.price} onChange={e => updateConfigValue(['aiPackages', idx, 'price'], Number(e.target.value))} className="w-24 p-2 border rounded-lg font-bold text-sm text-center" placeholder="$"/>
                                                         <label className="flex items-center gap-2 text-xs font-bold cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border">
-                                                            <input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['aiPackages', idx, 'isOneTime'], e.target.checked)} className="w-4 h-4"/> חד-פעמי
+                                                            <input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['aiPackages', idx, 'isOneTime'], e.target.checked)} className="w-4 h-4"/> חיוב אפיון חד-פעמי
                                                         </label>
                                                     </div>
                                                 ))}
@@ -836,7 +852,7 @@
 
                                     {/* Custom Sections */}
                                     <div className="pt-8 border-t">
-                                        <h3 className="font-bold text-xl mb-6 text-slate-800">אזורי בחירה נוספים (תמיכה, חבילות פרסום וכו')</h3>
+                                        <h3 className="font-bold text-xl mb-6 text-slate-800">אזורי אומדן נוספים (שרתים, תמיכה, אינטגרציות וכו')</h3>
                                         {config.customSections.map((sec, sIdx) => (
                                             <div key={sec.id} className="mb-8 bg-slate-50 p-6 rounded-3xl border border-slate-200 relative group">
                                                 <button onClick={() => {
@@ -846,12 +862,12 @@
                                                 }} className="absolute top-6 left-6 text-red-400 hover:text-red-600 bg-white p-2 rounded-lg shadow-sm border transition-opacity"><Icon name="trash-2" size={18}/></button>
                                                 
                                                 <div className="mb-6 w-3/4">
-                                                    <label className="text-xs font-bold text-slate-500 block mb-1">כותרת האזור (מוצג למשתמש)</label>
+                                                    <label className="text-xs font-bold text-slate-500 block mb-1">כותרת האזור במחשבון</label>
                                                     <input value={sec.title} onChange={e => updateConfigValue(['customSections', sIdx, 'title'], e.target.value)} className="text-2xl font-black bg-white border border-slate-200 rounded-xl w-full p-3 outline-none focus:border-blue-500 focus:ring-2 ring-blue-100"/>
                                                 </div>
                                                 
                                                 <div className="space-y-3 bg-white p-4 rounded-2xl border">
-                                                    <label className="text-xs font-bold text-slate-500 block mb-2">אפשרויות בחירה בתוך האזור:</label>
+                                                    <label className="text-xs font-bold text-slate-500 block mb-2">אפשרויות אומדן בתוך האזור:</label>
                                                     {sec.packages.map((pkg, pIdx) => (
                                                         <div key={pkg.id} className="flex flex-wrap md:flex-nowrap gap-3 items-center bg-slate-50 p-2 rounded-xl border">
                                                             <input value={pkg.name} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'name'], e.target.value)} className="flex-grow p-2 border rounded-lg text-sm font-bold" placeholder="שם האופציה"/>
@@ -859,7 +875,7 @@
                                                                 <span className="absolute left-3 top-2.5 text-slate-400 text-xs">$</span>
                                                                 <input type="number" value={pkg.price} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'price'], Number(e.target.value))} className="w-24 p-2 pl-6 border rounded-lg text-sm font-black"/>
                                                             </div>
-                                                            <label className="flex items-center gap-1 text-xs bg-white px-3 py-2 rounded-lg border font-bold cursor-pointer"><input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'isOneTime'], e.target.checked)}/> חד-פעמי</label>
+                                                            <label className="flex items-center gap-1 text-xs bg-white px-3 py-2 rounded-lg border font-bold cursor-pointer"><input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'isOneTime'], e.target.checked)}/> חיוב חד-פעמי</label>
                                                             <button onClick={() => {
                                                                 const newSecs = [...config.customSections];
                                                                 newSecs[sIdx].packages.splice(pIdx, 1);
@@ -878,8 +894,8 @@
                                         
                                         <div className="flex gap-4 bg-blue-50 p-6 rounded-3xl border border-blue-200 items-center mt-6">
                                             <div className="flex-grow">
-                                                <label className="text-xs font-bold text-blue-800 mb-1 block">יצירת קטגוריית שירותים חדשה</label>
-                                                <input value={newSectionTitle} onChange={e => setNewSectionTitle(e.target.value)} placeholder="למשל: תמיכה ותחזוקה..." className="w-full p-3 border rounded-xl bg-white font-bold"/>
+                                                <label className="text-xs font-bold text-blue-800 mb-1 block">יצירת קטגוריית אומדן חדשה</label>
+                                                <input value={newSectionTitle} onChange={e => setNewSectionTitle(e.target.value)} placeholder="למשל: סביבות ענן / שרתים..." className="w-full p-3 border rounded-xl bg-white font-bold"/>
                                             </div>
                                             <button onClick={addNewSection} className="bg-blue-700 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-800 shadow-lg mt-5">הקם אזור</button>
                                         </div>
@@ -889,80 +905,86 @@
                         </div>
                     )}
 
-                    {/* --- אזור הדפסה (PDF) --- */}
+                    {/* --- אזור הדפסה מיוחד לצרכים פנימיים (PDF) --- */}
                     <div id="print-area">
                         <div className="print-container">
-                            <div className="quote-header">
+                            
+                            {/* כותרת ולוגואים */}
+                            <div className="avoid-break" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #2563eb', paddingBottom: '20px', marginBottom: '30px' }}>
                                 <div>
-                                    <h1>הצעת מחיר: ONEFLOW 360 PRO</h1>
+                                    <img src="oneflowlogo.png" alt="ONEFLOW 360 PRO" style={{ height: '45px', marginBottom: '15px' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
+                                    <h1 style={{ display: 'none' }}>אומדן עלויות פרויקט: ONEFLOW 360 PRO</h1>
                                     <div className="print-sub-header">
-                                        <p><strong>לכבוד:</strong> {clientName || "לקוח יקר"}</p>
-                                        <p><strong>תאריך:</strong> {new Date(quoteDate).toLocaleDateString('he-IL')}</p>
+                                        <p><strong>לקוח / פרויקט:</strong> {clientName || "לא צוין שם פרויקט"}</p>
+                                        <p><strong>תאריך אומדן:</strong> {new Date(quoteDate).toLocaleDateString('he-IL')}</p>
                                     </div>
                                 </div>
-                                <div style={{textAlign: 'left'}}>
-                                    <h2 style={{margin:0, fontSize:'22pt', color:'#2563eb', border:'none'}}>ONEBTN</h2>
-                                    <p style={{fontSize:'10pt', letterSpacing:'1px', textTransform:'uppercase'}}>Digital Backbone Solutions</p>
+                                <div style={{ textAlign: 'left' }}>
+                                    <img src="onebtnlogo.png" alt="ONEBTN" style={{ height: '40px', marginBottom: '5px' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
+                                    <h2 style={{ display: 'none', margin: 0, fontSize: '22pt', color: '#2563eb', border: 'none' }}>ONEBTN</h2>
+                                    <p style={{ fontSize: '10pt', letterSpacing: '1px', textTransform: 'uppercase', color: '#64748b' }}>Digital Backbone Solutions</p>
                                 </div>
                             </div>
 
-                            <h2>1. מפרט מודולים ומדרגות שירות</h2>
-                            <table className="print-table">
-                                <thead>
-                                    <tr>
-                                        <th>מודול פרויקטאלי</th>
-                                        <th>מדרגת שירות נבחרת</th>
-                                        <th style={{textAlign:'center'}}>תמחור חודשי</th>
-                                        <th style={{width:'100px', textAlign:'center'}}>ימי הקמה</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {totals.selectedModulesDetails.map(m => (
-                                        <tr key={m.id}>
-                                            <td style={{fontWeight:'bold'}}>
-                                                {m.name}
-                                                {m.note && <div style={{fontSize:'9pt', color:'#64748b', fontWeight:'normal', marginTop:'4px'}}>{m.note}</div>}
-                                            </td>
-                                            <td>{m.selectedTierName}</td>
-                                            <td style={{textAlign:'center'}}>${m.monthlyPrice.toLocaleString()}</td>
-                                            <td style={{textAlign:'center'}}>{m.setupDays}</td>
+                            <div className="avoid-break">
+                                <h2>1. אומדן מודולים לתכולת הפרויקט</h2>
+                                <table className="print-table">
+                                    <thead>
+                                        <tr>
+                                            <th>מודול נדרש</th>
+                                            <th>מדרגת עומס / היקף נבחר</th>
+                                            <th style={{textAlign:'center'}}>אומדן חודשי ($)</th>
+                                            <th style={{width:'110px', textAlign:'center'}}>אומדן ימי עבודה</th>
                                         </tr>
-                                    ))}
-                                    <tr style={{backgroundColor:'#f8fafc', fontWeight:'bold'}}>
-                                        <td colSpan="2">סה"כ מודולים וימי אפיון</td>
-                                        <td style={{textAlign:'center', color:'#1e3a8a'}}>${totals.modulesMRR.toLocaleString()}</td>
-                                        <td style={{textAlign:'center'}}>{totals.totalSetupDays}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {totals.selectedModulesDetails.map(m => (
+                                            <tr key={m.id}>
+                                                <td style={{fontWeight:'bold'}}>
+                                                    {m.name}
+                                                    {m.note && <div style={{fontSize:'9pt', color:'#64748b', fontWeight:'normal', marginTop:'4px'}}>{m.note}</div>}
+                                                </td>
+                                                <td>{m.selectedTierName}</td>
+                                                <td style={{textAlign:'center'}}>${m.monthlyPrice.toLocaleString()}</td>
+                                                <td style={{textAlign:'center'}}>{m.setupDays} ימי הקמה</td>
+                                            </tr>
+                                        ))}
+                                        <tr style={{backgroundColor:'#f8fafc', fontWeight:'bold'}}>
+                                            <td colSpan="2">סה"כ מודולים וימי אפיון טכני</td>
+                                            <td style={{textAlign:'center', color:'#1e3a8a'}}>${totals.modulesMRR.toLocaleString()}</td>
+                                            <td style={{textAlign:'center', color:'#c2410c'}}>{totals.totalSetupDays} ימי אדם</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
 
                             {/* נציג את טבלת הרישוי והתוספות רק אם יש משהו להציג בתוכה */}
                             {(config.enableUsers || config.enableTiers || (config.enableAI && totals.aiObj.price > 0) || totals.customItems.length > 0) && (
-                                <>
-                                    <h2>2. רישוי, חבילות ותוספות</h2>
+                                <div className="avoid-break">
+                                    <h2>2. אומדן רישוי, רכיבי תשתית ותוספות</h2>
                                     <table className="print-table">
                                         <thead>
                                             <tr>
-                                                <th>רכיב / שירות</th>
-                                                <th>פירוט</th>
-                                                <th style={{textAlign:'center'}}>סוג חיוב</th>
-                                                <th style={{textAlign:'center'}}>מחיר</th>
+                                                <th>רכיב / שירות משלים</th>
+                                                <th>פירוט היקף</th>
+                                                <th style={{textAlign:'center'}}>סוג אומדן</th>
+                                                <th style={{textAlign:'center'}}>עלות ($)</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {config.enableUsers && (
                                                 <tr>
-                                                    <td style={{fontWeight:'bold'}}>רישוי משתמשים</td>
-                                                    <td>{userCount} רשיונות למערכת</td>
-                                                    <td style={{textAlign:'center'}}><span className="badge">חודשי</span></td>
+                                                    <td style={{fontWeight:'bold'}}>רישוי משתמשי מערכת</td>
+                                                    <td>{userCount} רשיונות (Seats)</td>
+                                                    <td style={{textAlign:'center'}}><span className="badge">חודשי (MRR)</span></td>
                                                     <td style={{textAlign:'center'}}>${totals.usersCost.toLocaleString()}</td>
                                                 </tr>
                                             )}
                                             {config.enableTiers && (
                                                 <tr>
-                                                    <td style={{fontWeight:'bold'}}>חבילת טרנזקציות</td>
-                                                    <td>{totals.tierObj.name} (עד {totals.tierObj.limit.toLocaleString()} פעולות)</td>
-                                                    <td style={{textAlign:'center'}}><span className="badge">חודשי</span></td>
+                                                    <td style={{fontWeight:'bold'}}>חבילת טרנזקציות ומסמכים</td>
+                                                    <td>{totals.tierObj.name} (עד {totals.tierObj.limit.toLocaleString()})</td>
+                                                    <td style={{textAlign:'center'}}><span className="badge">חודשי (MRR)</span></td>
                                                     <td style={{textAlign:'center'}}>${totals.tierObj.price.toLocaleString()}</td>
                                                 </tr>
                                             )}
@@ -973,7 +995,7 @@
                                                     <td>{totals.aiObj.description}</td>
                                                     <td style={{textAlign:'center'}}>
                                                         <span className="badge" style={{backgroundColor: totals.aiObj.isOneTime ? '#fff7ed' : '#eff6ff', color: totals.aiObj.isOneTime ? '#c2410c' : '#1e40af'}}>
-                                                            {totals.aiObj.isOneTime ? 'חד-פעמי' : 'חודשי'}
+                                                            {totals.aiObj.isOneTime ? 'חד-פעמי (Setup)' : 'חודשי (MRR)'}
                                                         </span>
                                                     </td>
                                                     <td style={{textAlign:'center'}}>${totals.aiObj.price.toLocaleString()}</td>
@@ -983,10 +1005,10 @@
                                             {totals.customItems.map((item, idx) => (
                                                 <tr key={idx}>
                                                     <td style={{fontWeight:'bold'}}>{item.sectionTitle}: {item.name}</td>
-                                                    <td>{item.description || '-'}</td>
+                                                    <td>{item.description || 'ללא פירוט נוסף'}</td>
                                                     <td style={{textAlign:'center'}}>
                                                         <span className="badge" style={{backgroundColor: item.isOneTime ? '#fff7ed' : '#eff6ff', color: item.isOneTime ? '#c2410c' : '#1e40af'}}>
-                                                            {item.isOneTime ? 'חד-פעמי' : 'חודשי'}
+                                                            {item.isOneTime ? 'חד-פעמי (Setup)' : 'חודשי (MRR)'}
                                                         </span>
                                                     </td>
                                                     <td style={{textAlign:'center'}}>${item.price.toLocaleString()}</td>
@@ -994,14 +1016,14 @@
                                             ))}
                                         </tbody>
                                     </table>
-                                </>
+                                </div>
                             )}
 
-                            <div className="summary-box">
-                                <h3 style={{marginTop:0, borderBottom:'none', fontSize:'18pt', color:'#1e3a8a'}}>סיכום עלויות הפרויקט</h3>
+                            <div className="summary-box avoid-break">
+                                <h3 style={{marginTop:0, borderBottom:'none', fontSize:'18pt', color:'#1e3a8a'}}>סיכום אומדן כולל לפרויקט</h3>
                                 
                                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'20px'}}>
-                                    <div style={{fontSize:'14pt', fontWeight:'bold'}}>סה"כ תשלום חודשי קבוע (MRR):</div>
+                                    <div style={{fontSize:'14pt', fontWeight:'bold'}}>סה"כ אומדן חיוב חודשי קבוע (MRR):</div>
                                     <div style={{textAlign:'left'}}>
                                         <div style={{fontSize:'22pt', fontWeight:'900', color:'#1e3a8a', lineHeight:1}}>${totals.totalMRR.toLocaleString()}</div>
                                         <div style={{fontSize:'11pt', color:'#64748b'}}>≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
@@ -1010,8 +1032,8 @@
 
                                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', paddingTop:'20px', borderTop:'1px dashed #94a3b8'}}>
                                     <div>
-                                        <div style={{fontSize:'14pt', fontWeight:'bold', color:'#c2410c'}}>סה"כ עלות הקמה חד-פעמית (Setup):</div>
-                                        <div style={{fontSize:'10pt', color:'#ea580c', marginTop:'5px'}}>כולל אפיון, הטמעה והדרכה ({totals.totalSetupDays} ימי עבודה משוערים)</div>
+                                        <div style={{fontSize:'14pt', fontWeight:'bold', color:'#c2410c'}}>סה"כ אומדן עלות הקמה ופיתוח חד-פעמית (Setup):</div>
+                                        <div style={{fontSize:'10pt', color:'#ea580c', marginTop:'5px'}}>נגזר משעות עבודה מוערכות: ({totals.totalSetupDays} ימי עבודה של מיישם/מפתח)</div>
                                     </div>
                                     <div style={{textAlign:'left'}}>
                                         <div style={{fontSize:'22pt', fontWeight:'900', color:'#c2410c', lineHeight:1}}>${totals.totalSetup.toLocaleString()}</div>
@@ -1020,10 +1042,10 @@
                                 </div>
                             </div>
 
-                            <div style={{marginTop:'50px', textAlign:'center', fontSize:'10pt', color:'#64748b', borderTop:'1px solid #e2e8f0', paddingTop:'20px'}}>
-                                <p>המחירים אינם כוללים מע"מ כחוק | שער דולר לחישוב: {config.exchangeRate} ₪</p>
-                                <p>תוקף ההצעה: 14 ימי עסקים</p>
-                                <p style={{fontWeight:'bold', marginTop:'10px'}}>ONEFLOW PRO ERP Hybrid Infrastructure</p>
+                            <div className="avoid-break" style={{marginTop:'50px', textAlign:'center', fontSize:'10pt', color:'#64748b', borderTop:'1px solid #e2e8f0', paddingTop:'20px'}}>
+                                <p style={{fontWeight:'bold', color:'#ef4444'}}>אומדן זה מיועד לשימוש פנימי בלבד לשם הערכת עלויות טרם הפקת הצעת מחיר רשמית ללקוח.</p>
+                                <p className="mt-1">אומדן המחירים אינו כולל מע"מ | מחושב לפי שער המרה פנימי של: {config.exchangeRate} ₪</p>
+                                <p style={{fontWeight:'bold', marginTop:'10px'}}>ONEFLOW PRO ERP Hybrid Infrastructure - Internal Pricing Tool</p>
                             </div>
                         </div>
                     </div>

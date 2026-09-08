@@ -3,48 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ONEFLOW 360 - אומדן עלויות פרויקט</title>
-    
+    <title>ONEFLOW PRO BUSINESS - אומדן עלויות פרויקט</title>
+
     <!-- טעינת ספריות חיצוניות (גרסה יציבה) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    
+
     <!-- פונטים -->
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
-    
+
     <style>
-        body { 
-            font-family: 'Heebo', sans-serif; 
+        body {
+            font-family: 'Heebo', sans-serif;
             background-color: #f8fafc;
             color: #0f172a;
             -webkit-font-smoothing: antialiased;
         }
 
-        /* התאמת סליידרים ל-RTL */
         input[type="range"] { direction: ltr; }
 
-        /* גלילה נעימה */
         .custom-scroll::-webkit-scrollbar { width: 6px; }
         .custom-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-track { background-color: transparent; }
 
-        /* --- הגדרות הדפסה (PDF) משודרגות --- */
+        /* --- הגדרות הדפסה (PDF) --- */
         @media print {
-            @page { 
-                size: A4; 
+            @page {
+                size: A4;
                 margin: 15mm 10mm;
             }
             body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
-            
-            /* הסתרת כל מה שלא קשור להדפסה */
+
             .no-print, header, button, .admin-modal, .mobile-bar { display: none !important; }
-            
-            /* הצגת אזור ההדפסה בלבד */
-            #print-area { 
-                display: block !important; 
+
+            #print-area {
+                display: block !important;
                 position: absolute;
                 top: 0;
                 left: 0;
@@ -54,8 +50,7 @@
             }
 
             .print-container { padding: 0 10px; }
-            
-            /* מניעת חיתוך אלמנטים במעברי עמוד */
+
             .avoid-break {
                 page-break-inside: avoid;
                 break-inside: avoid;
@@ -64,41 +59,43 @@
 
             h1 { font-size: 24pt !important; font-weight: 900 !important; color: #1e3a8a !important; margin: 0; }
             .print-sub-header { color: #64748b !important; font-size: 11pt !important; margin-top: 10px; }
-            
-            h2 { 
-                font-size: 16pt !important; 
-                font-weight: 800 !important; 
-                color: #1e293b !important; 
-                margin-top: 0 !important; 
-                margin-bottom: 10px !important; 
+
+            h2 {
+                font-size: 16pt !important;
+                font-weight: 800 !important;
+                color: #1e293b !important;
+                margin-top: 0 !important;
+                margin-bottom: 10px !important;
                 border-bottom: 2px solid #e2e8f0 !important;
                 padding-bottom: 5px !important;
             }
 
-            /* טבלה נקייה */
             table { width: 100%; border-collapse: collapse; font-size: 10pt; }
             th { background-color: #f1f5f9 !important; padding: 8px; text-align: right; font-weight: 800; border: 1px solid #e2e8f0; }
-            td { padding: 8px; border: 1px solid #e2e8f0; vertical-align: top; }
-            
-            /* קופסאות סיכום */
+            td { padding: 8px; border: 1px solid #e2e8f0; vertical-align: middle; }
+
+            .badge {
+                display: inline-block;
+                padding: 2px 10px;
+                border-radius: 99px;
+                font-size: 8pt;
+                font-weight: 800;
+                background-color: #f1f5f9 !important;
+                color: #475569 !important;
+            }
+            .badge-premium { background-color: #f5f3ff !important; color: #6d28d9 !important; }
+            .badge-basic { background-color: #eff6ff !important; color: #1d4ed8 !important; }
+
             .summary-box {
                 background-color: #f8fafc !important;
                 border: 2px solid #cbd5e1 !important;
                 border-radius: 12px;
-                padding: 15px;
+                padding: 25px;
+                margin-top: 30px;
             }
-
-            .badge { 
-                border: 1px solid #ddd; 
-                padding: 2px 6px; 
-                border-radius: 4px; 
-                font-size: 8pt; 
-                font-weight: bold; 
-            }
-            .badge-public { background-color: #dbeafe !important; color: #1e40af !important; border-color: #bfdbfe !important; }
-            .badge-private { background-color: #f3e8ff !important; color: #6b21a8 !important; border-color: #e9d5ff !important; }
         }
-        
+
+        /* אזור ההדפסה מוסתר על המסך */
         #print-area { display: none; }
     </style>
 </head>
@@ -112,582 +109,698 @@
         const Icon = ({ name, size = 20, className = "" }) => {
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [name]); 
+            }, [name]);
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
         const ICON_LIST = [
-            'shopping-cart', 'package', 'layers', 'truck', 'megaphone', 'mail', 'briefcase', 'bar-chart-3',
-            'activity', 'users', 'puzzle', 'globe', 'shield', 'zap', 'coins', 'hammer', 'clock', 'calendar',
-            'database', 'settings', 'check-circle-2', 'file-text', 'server', 'smartphone', 'wifi', 'box', 'copy',
-            'download', 'upload', 'lock', 'unlock'
+            'shopping-cart', 'smartphone', 'briefcase', 'layers', 'package', 'truck', 'megaphone',
+            'bar-chart-3', 'users', 'sparkles', 'bot', 'brain', 'workflow', 'route', 'warehouse',
+            'contact', 'list-checks', 'globe', 'shield', 'zap', 'coins', 'credit-card', 'hammer',
+            'clock', 'calendar', 'database', 'settings', 'check-circle-2', 'file-text', 'server',
+            'wifi', 'box', 'copy', 'download', 'upload', 'lock', 'image', 'activity', 'puzzle', 'mail'
         ];
 
-        const generateDefaultTiers = (moduleId) => [
-            { id: `${moduleId}_t1`, name: 'בסיסי (עד 1,000)', price: 100 },
-            { id: `${moduleId}_t2`, name: 'מתקדם (עד 5,000)', price: 250 },
-            { id: `${moduleId}_t3`, name: 'ללא הגבלה', price: 500 }
-        ];
+        // מפתחות אחסון בדפדפן
+        const STORAGE_KEY = 'oneflow_tx_config_v1';        // מחירון והגדרות מערכת
+        const BRAND_KEY   = 'oneflow_implementer_brand_v1'; // מיתוג המיישם (לוגו + שם) - נשמר בנפרד
 
-        // --- נתוני ברירת מחדל ---
+        // --- נתוני ברירת מחדל: מודל טרנזקציות ---
+        // תמחור נגזר מיחידת טרנזקציה אחת: 2,500 טרנזקציות = 125 ש"ח  =>  0.05 ש"ח לטרנזקציה
+        // בייסיק:  8,000 טרנזקציות x 0.05 = 400 ש"ח
+        // פרימיום: 12,000 טרנזקציות x 0.05 = 600 ש"ח
         const DEFAULT_CONFIG = {
-            enableGlobalTiers: true,
-            enableAI: true,
-            exchangeRate: 3.7, 
+            platformName: 'ONEFLOW PRO BUSINESS',
+            platformDescription: 'תשתית הליבה: אחסון, אבטחה, ניהול הרשאות, גיבויים ועדכוני גרסה',
+            platformPrice: 0,
+
             setupHourlyRate: 350,
             setupHoursPerDay: 9,
+            exchangeRate: 3.7,
+
+            brandLogo: 'logo.png',
+
             uiText: {
-                modulesHeader: "רכיב א': בחירת מודולים נדרשים",
-                moduleTreeHeader: "רכיב ב': עץ בניית מודולים (הגדרות גישה ועומסים)",
-                tiersHeader: "רכיב ג': חבילת טרנזקציות ומסמכים גלובלית",
-                aiHeader: "רכיב ד': שילוב AI",
+                modulesHeader: "רכיב א': בחירת מודולים",
+                setupHeader:   "רכיב ב': אומדן שעות הקמה",
+                txHeader:      "רכיב ג': חבילת טרנזקציות",
+                usersHeader:   "רכיב ד': משתמשי מערכת",
             },
-            // חבילות משתמשים לפי סוג חשיפה
-            publicUserPackages: [
-                { id: 'pub_1', name: 'עד 100 משתמשי קצה', price: 50 },
-                { id: 'pub_2', name: 'עד 1,000 משתמשי קצה', price: 150 },
-                { id: 'pub_3', name: 'ללא הגבלה', price: 400 },
-            ],
-            privateUserPackages: [
-                { id: 'priv_1', name: 'עד 5 משתמשי פנים', price: 100 },
-                { id: 'priv_2', name: 'עד 20 משתמשי פנים', price: 300 },
-                { id: 'priv_3', name: 'ללא הגבלה', price: 800 },
-            ],
+
+            // הגדרת רמות המודולים
+            moduleTiers: {
+                basic:   { label: 'בייסיק',  price: 400, tx: 8000  },
+                premium: { label: 'פרימיום', price: 600, tx: 12000 },
+            },
+
             modules: [
-                { id: 'sales', name: 'מכירות', icon: 'shopping-cart', setupDays: 3, note: '', tiers: generateDefaultTiers('sales') },
-                { id: 'inventory', name: 'מלאי', icon: 'package', setupDays: 5, note: '', tiers: generateDefaultTiers('inventory') },
-                { id: 'picking', name: 'ליקוט', icon: 'layers', setupDays: 4, note: '', tiers: generateDefaultTiers('picking') },
-                { id: 'shipping', name: 'שילוח', icon: 'truck', setupDays: 2, note: '', tiers: generateDefaultTiers('shipping') },
-                { id: 'bi', name: 'BI & דוחות', icon: 'bar-chart-3', setupDays: 5, note: '', tiers: generateDefaultTiers('bi') },
+                { id: 'b2b',       name: 'מכירות B2B',    icon: 'smartphone',  tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 40, note: 'אפליקציה בחנויות אפל ואנדרואיד ואתר לגישה דרך דפדפן, ממותגים' },
+                { id: 'agent',     name: 'מכירות סוכן',   icon: 'briefcase',   tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 32, note: 'מסופון איש מכירות לניהול תיקי לקוחות' },
+                { id: 'picking',   name: 'ליקוט',          icon: 'layers',      tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 36, note: 'ממשקי ליקוט סחורה' },
+                { id: 'inventory', name: 'מלאי',           icon: 'package',     tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 45, note: 'ממשקי ניהול מלאי והזמנת סחורה מספקים' },
+                { id: 'drivers',   name: 'נהגים',          icon: 'truck',       tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 18, note: 'ממשק ניהול תהליכי שילוח' },
+                { id: 'marketing', name: 'שיווק ודיוור',   icon: 'megaphone',   tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 24, note: 'ניהול פעולות שיווק ודיוור מול גורמי פנים וחוץ' },
+                { id: 'bi',        name: 'דוחות ו-BI',     icon: 'bar-chart-3', tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 45, note: 'ממשקי מידע, דשבורדים ודוחות מותאמים לתפקיד ולצורך, בחתכי פעילות וזמן' },
+                { id: 'crm',       name: 'CRM',            icon: 'users',       tier: 'premium', price: 600, includedTx: 12000, setupHours: 60, note: 'ניהול תהליכים עסקיים' },
+                { id: 'ai',        name: 'AI Assistant',   icon: 'sparkles',    tier: 'premium', price: 600, includedTx: 12000, setupHours: 40, note: 'עוזר חכם, חיזוי והמלצות בזמן אמת' },
             ],
-            globalTiers: [
-                { id: 'S', name: 'Tier S (Basic)', limit: 200, price: 150 },
-                { id: 'M', name: 'Tier M (Growth)', limit: 1000, price: 450 },
-                { id: 'L', name: 'Tier L (Scale)', limit: 5000, price: 1200 },
-                { id: 'ENT', name: 'Tier ENT', limit: 15000, price: 3000 },
-            ],
-            aiPackages: [
-                { id: 'none', name: 'ללא AI', price: 0, description: 'תשתית בלבד', limit: 0, isOneTime: false },
-                { id: 'starter', name: 'AI Starter', price: 199, description: 'חיזוי בסיסי', limit: 500, isOneTime: false },
-                { id: 'pro', name: 'AI Pro', price: 550, description: 'אופטימיזציה בזמן אמת', limit: 2500, isOneTime: false },
-            ],
-            customSections: [] 
+
+            // חבילת טרנזקציות נוספת - יחידת הבסיס לסולם התחנות
+            extraTxPack: { tx: 2500, price: 125 },
+            // תחנות מהירות: כמה חבילות בכל תחנה
+            txStations: [0, 1, 2, 4, 8, 12, 20],
+
+            // משתמשים
+            users: { included: 15, packSize: 5, packPrice: 500 },
+
+            customSections: []
+        };
+
+        // --- עזרי פורמט ---
+        const fmt   = (n) => Math.round(Number(n) || 0).toLocaleString('he-IL');
+        const money = (n) => fmt(n) + ' ₪';
+        const usd   = (n, rate) => '≈ $' + fmt((Number(n) || 0) / (Number(rate) || 3.7));
+
+        // הקטנת תמונה לפני שמירה בדפדפן (כדי לא לחרוג ממגבלת האחסון)
+        const resizeImage = (file, maxWidth, callback) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const scale = Math.min(1, maxWidth / img.width);
+                    const w = Math.round(img.width * scale);
+                    const h = Math.round(img.height * scale);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    callback(canvas.toDataURL('image/png'));
+                };
+                img.onerror = () => callback(null);
+                img.src = e.target.result;
+            };
+            reader.onerror = () => callback(null);
+            reader.readAsDataURL(file);
+        };
+
+        // מיגרציה: התאמת קובץ הגדרות ישן למבנה החדש
+        const migrateConfig = (raw) => {
+            const c = { ...DEFAULT_CONFIG, ...raw };
+            c.moduleTiers = { ...DEFAULT_CONFIG.moduleTiers, ...(raw.moduleTiers || {}) };
+            c.uiText      = { ...DEFAULT_CONFIG.uiText,      ...(raw.uiText || {}) };
+            c.extraTxPack = { ...DEFAULT_CONFIG.extraTxPack, ...(raw.extraTxPack || {}) };
+            c.users       = { ...DEFAULT_CONFIG.users,       ...(raw.users || {}) };
+            if (!Array.isArray(c.txStations) || !c.txStations.length) c.txStations = DEFAULT_CONFIG.txStations;
+            if (!Array.isArray(c.customSections)) c.customSections = [];
+
+            c.modules = (Array.isArray(raw.modules) ? raw.modules : DEFAULT_CONFIG.modules).map(m => {
+                const tier = (m.tier === 'premium') ? 'premium' : 'basic';
+                const tierDef = c.moduleTiers[tier];
+                return {
+                    id: m.id || ('mod_' + Math.random().toString(36).slice(2)),
+                    name: m.name || 'מודול',
+                    icon: m.icon || 'package',
+                    tier,
+                    // גרסה ישנה עבדה בימי הקמה - ממירים לשעות
+                    setupHours: Number(
+                        m.setupHours !== undefined
+                            ? m.setupHours
+                            : (Number(m.setupDays || 0) * Number(raw.setupHoursPerDay || DEFAULT_CONFIG.setupHoursPerDay))
+                    ) || 0,
+                    price: Number(m.price !== undefined ? m.price : tierDef.price) || 0,
+                    includedTx: Number(m.includedTx !== undefined ? m.includedTx : tierDef.tx) || 0,
+                    note: m.note || ''
+                };
+            });
+
+            // ניקוי שדות שאינם בשימוש במודל החדש
+            delete c.publicUserPackages;
+            delete c.privateUserPackages;
+            delete c.globalTiers;
+            delete c.aiPackages;
+            delete c.enableAI;
+            delete c.enableGlobalTiers;
+            delete c.enableTiers;
+            delete c.enableUsers;
+            delete c.tiers;
+            return c;
+        };
+
+        // לוגו המותג: מנסה קודם את logo.png, אחר כך את הלוגו הישן, ולבסוף טקסט
+        const BrandLogo = ({ src, className = "", style = {} }) => {
+            const [stage, setStage] = useState(0);
+            const chain = [src, 'oneflowlogo.png'];
+            if (stage >= chain.length) {
+                return (
+                    <div className={"flex items-center gap-2 " + className} style={style}>
+                        <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black text-lg">1</div>
+                        <div className="text-xl font-black whitespace-nowrap">ONEFLOW <span className="text-blue-600">PRO</span></div>
+                    </div>
+                );
+            }
+            return (
+                <img
+                    key={stage}
+                    src={chain[stage]}
+                    alt="ONEFLOW PRO"
+                    className={className}
+                    style={style}
+                    onError={() => setStage(s => s + 1)}
+                />
+            );
         };
 
         function App() {
-            const STORAGE_KEY = 'oneflow_pro_v_advanced_tree_02';
-
             const [config, setConfig] = useState(() => {
                 try {
                     const saved = localStorage.getItem(STORAGE_KEY);
-                    if (saved) {
-                        const parsed = JSON.parse(saved);
-                        // מיגרציה נתונים אם חסר
-                        if (!parsed.publicUserPackages) parsed.publicUserPackages = DEFAULT_CONFIG.publicUserPackages;
-                        if (!parsed.privateUserPackages) parsed.privateUserPackages = DEFAULT_CONFIG.privateUserPackages;
-                        if (!parsed.globalTiers) parsed.globalTiers = DEFAULT_CONFIG.globalTiers;
-                        return parsed;
-                    }
-                    return DEFAULT_CONFIG;
+                    return saved ? migrateConfig(JSON.parse(saved)) : DEFAULT_CONFIG;
                 } catch { return DEFAULT_CONFIG; }
             });
 
-            // נתוני אומדן (לשימוש פנימי)
-            const [clientName, setClientName] = useState('');
-            const [implementerName, setImplementerName] = useState(''); // שם המיישם
-            const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split('T')[0]);
-            
-            // בחירות המיישם
-            const [selectedModules, setSelectedModules] = useState(['sales', 'inventory']);
-            
-            // תצורת עץ מודולים: { [moduleId]: { tierId, accessType: 'public'|'private', userPackageId } }
-            const [moduleConfigs, setModuleConfigs] = useState({}); 
+            // מיתוג המיישם - נשמר בנפרד מהמחירון כדי לשרוד איפוס הגדרות
+            const [brand, setBrand] = useState(() => {
+                try {
+                    const saved = localStorage.getItem(BRAND_KEY);
+                    return saved ? JSON.parse(saved) : { logo: null, name: '' };
+                } catch { return { logo: null, name: '' }; }
+            });
 
-            const [selectedGlobalTier, setSelectedGlobalTier] = useState('S');
-            const [selectedAI, setSelectedAI] = useState('none');
+            // פרטי האומדן
+            const [clientName, setClientName] = useState('');
+            const [quoteDate, setQuoteDate] = useState(new Date().toISOString().split('T')[0]);
+
+            // בחירות המיישם
+            const [selectedModules, setSelectedModules] = useState(['b2b', 'agent']);
+            const [extraTxPacks, setExtraTxPacks] = useState(0);
+            // התאמת שעות הקמה לאומדן הנוכחי (ברירת המחדל מגיעה מהמחירון)
+            const [hoursOverride, setHoursOverride] = useState({});
+            const [extraUserPacks, setExtraUserPacks] = useState(0);
             const [customSelections, setCustomSelections] = useState({});
-            
+
             // UI
             const [isAdminOpen, setIsAdminOpen] = useState(false);
             const [showSummary, setShowSummary] = useState(false);
-            const [iconPickerOpen, setIconPickerOpen] = useState(null); 
+            const [iconPickerOpen, setIconPickerOpen] = useState(null);
+            const [logoError, setLogoError] = useState('');
             const fileInputRef = useRef(null);
+            const logoInputRef = useRef(null);
 
-            const [newModule, setNewModule] = useState({ name: '', icon: 'package', setupDays: 0, note: '' });
+            const [newModule, setNewModule] = useState({ name: '', icon: 'package', tier: 'basic', setupHours: 0, note: '' });
             const [newSectionTitle, setNewSectionTitle] = useState('');
 
-            // Persistence
+            // שמירה אוטומטית של המחירון
             useEffect(() => {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-                if(window.lucide) window.lucide.createIcons();
-            }, [config, selectedModules, moduleConfigs, isAdminOpen]);
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(config)); } catch {}
+                if (window.lucide) window.lucide.createIcons();
+            }, [config, selectedModules, extraTxPacks, extraUserPacks, isAdminOpen, brand]);
 
-            // אתחול אוטומטי של הגדרות למודול שסומן
+            // שמירה אוטומטית של מיתוג המיישם
             useEffect(() => {
-                const updatedConfigs = { ...moduleConfigs };
-                let changed = false;
-                selectedModules.forEach(mId => {
-                    if (!updatedConfigs[mId]) {
-                        const mod = config.modules.find(x => x.id === mId);
-                        if (mod) {
-                            updatedConfigs[mId] = {
-                                tierId: mod.tiers?.[0]?.id || '',
-                                accessType: 'private', // ברירת מחדל
-                                userPackageId: config.privateUserPackages[0]?.id || ''
-                            };
-                            changed = true;
-                        }
-                    }
-                });
-                if (changed) setModuleConfigs(updatedConfigs);
-            }, [selectedModules, config.modules]);
+                try { localStorage.setItem(BRAND_KEY, JSON.stringify(brand)); }
+                catch { setLogoError('לא ניתן לשמור את הלוגו - אין מספיק מקום באחסון הדפדפן.'); }
+            }, [brand]);
 
             // --- לוגיקת חישוב ---
             const totals = useMemo(() => {
+                const details = [];
                 let modulesMRR = 0;
-                let totalSetupDays = 0;
-                const selectedModulesDetails = [];
+                let includedTx = 0;
+                let setupHours = 0;
 
-                selectedModules.forEach(mId => {
-                    const mod = config.modules.find(x => x.id === mId);
-                    const modConf = moduleConfigs[mId];
-                    if (mod && modConf) {
-                        totalSetupDays += Number(mod.setupDays || 0);
-                        
-                        // חישוב מדרגת פעילות
-                        const selectedTier = mod.tiers?.find(t => t.id === modConf.tierId) || mod.tiers?.[0];
-                        const tierPrice = selectedTier ? selectedTier.price : 0;
-                        
-                        // חישוב חבילת משתמשים לפי סוג הגישה
-                        const userPkgList = modConf.accessType === 'public' ? config.publicUserPackages : config.privateUserPackages;
-                        const selectedUserPkg = userPkgList.find(p => p.id === modConf.userPackageId) || userPkgList[0];
-                        const userPrice = selectedUserPkg ? selectedUserPkg.price : 0;
-
-                        const totalModulePrice = tierPrice + userPrice;
-                        modulesMRR += totalModulePrice;
-
-                        selectedModulesDetails.push({
-                            ...mod,
-                            accessType: modConf.accessType,
-                            selectedTierName: selectedTier ? selectedTier.name : 'בסיסי',
-                            tierPrice: tierPrice,
-                            selectedUserPkgName: selectedUserPkg ? selectedUserPkg.name : 'ללא משתמשים',
-                            userPrice: userPrice,
-                            monthlyPrice: totalModulePrice
-                        });
-                    }
+                selectedModules.forEach(id => {
+                    const m = config.modules.find(x => x.id === id);
+                    if (!m) return;
+                    const hours = hoursOverride[id] !== undefined
+                        ? (Number(hoursOverride[id]) || 0)
+                        : (Number(m.setupHours) || 0);
+                    modulesMRR += Number(m.price) || 0;
+                    includedTx += Number(m.includedTx) || 0;
+                    setupHours += hours;
+                    details.push({ ...m, hours });
                 });
 
-                const globalTierObj = config.enableGlobalTiers ? (config.globalTiers.find(t => t.id === selectedGlobalTier) || config.globalTiers[0]) : { price: 0, name: '' };
-                const backboneTotal = modulesMRR + (globalTierObj.price || 0);
+                // טרנזקציות
+                const packTx    = Number(config.extraTxPack.tx) || 0;
+                const packPrice = Number(config.extraTxPack.price) || 0;
+                const extraTx     = extraTxPacks * packTx;
+                const extraTxCost = extraTxPacks * packPrice;
+                const totalTx     = includedTx + extraTx;
+                const unitPrice   = packTx > 0 ? packPrice / packTx : 0;
 
-                let addonsMRR = 0;
-                let addonsSetup = 0;
-                const mrrBreakdown = [];
-                const setupBreakdown = [];
-                
-                // AI
-                let aiObj = { price: 0, name: '', description: '' };
-                if (config.enableAI) {
-                    aiObj = config.aiPackages.find(a => a.id === selectedAI) || config.aiPackages[0];
-                    if(aiObj.price > 0) {
-                        if(aiObj.isOneTime) {
-                            addonsSetup += aiObj.price;
-                            setupBreakdown.push({ label: `AI: ${aiObj.name}`, price: aiObj.price });
-                        } else {
-                            addonsMRR += aiObj.price;
-                            mrrBreakdown.push({ label: `AI: ${aiObj.name}`, price: aiObj.price });
-                        }
-                    }
-                }
+                // משתמשים
+                const usersIncluded  = Number(config.users.included) || 0;
+                const userPackSize   = Number(config.users.packSize) || 0;
+                const userPackPrice  = Number(config.users.packPrice) || 0;
+                const extraUsersCost = extraUserPacks * userPackPrice;
+                const totalUsers     = usersIncluded + extraUserPacks * userPackSize;
 
-                // Custom Sections
-                const customItems = [];
+                // אזורים מותאמים אישית
+                let addonsMRR = 0, addonsSetup = 0;
+                const mrrBreakdown = [], setupBreakdown = [], customItems = [];
                 config.customSections.forEach(sec => {
-                    const pkgId = customSelections[sec.id];
-                    const pkg = sec.packages.find(p => p.id === pkgId);
-                    if(pkg && pkg.price > 0) {
-                        if(pkg.isOneTime) {
-                            addonsSetup += pkg.price;
-                            setupBreakdown.push({ label: `${sec.title}: ${pkg.name}`, price: pkg.price });
+                    const pkg = sec.packages.find(p => p.id === customSelections[sec.id]);
+                    if (pkg && Number(pkg.price) > 0) {
+                        if (pkg.isOneTime) {
+                            addonsSetup += Number(pkg.price);
+                            setupBreakdown.push({ label: sec.title + ': ' + pkg.name, price: Number(pkg.price) });
                         } else {
-                            addonsMRR += pkg.price;
-                            mrrBreakdown.push({ label: `${sec.title}: ${pkg.name}`, price: pkg.price });
+                            addonsMRR += Number(pkg.price);
+                            mrrBreakdown.push({ label: sec.title + ': ' + pkg.name, price: Number(pkg.price) });
                         }
                         customItems.push({ ...pkg, sectionTitle: sec.title });
                     }
                 });
 
-                const setupLaborCost = totalSetupDays * config.setupHourlyRate * config.setupHoursPerDay;
-                const totalSetup = setupLaborCost + addonsSetup;
-                const totalMRR = backboneTotal + addonsMRR;
+                const platformPrice = Number(config.platformPrice) || 0;
+                const totalMRR = platformPrice + modulesMRR + extraTxCost + extraUsersCost + addonsMRR;
+
+                const setupLaborCost = setupHours * (Number(config.setupHourlyRate) || 0);
+                const totalSetup     = setupLaborCost + addonsSetup;
+                const setupDays      = (Number(config.setupHoursPerDay) || 9) > 0
+                    ? setupHours / Number(config.setupHoursPerDay) : 0;
 
                 return {
-                    modulesMRR, globalTierObj, backboneTotal,
-                    addonsMRR, addonsSetup, customItems, aiObj, mrrBreakdown, setupBreakdown,
-                    totalSetupDays, setupLaborCost, totalSetup, totalMRR,
-                    selectedModulesDetails,
-                    nisMRR: totalMRR * config.exchangeRate,
-                    nisSetup: totalSetup * config.exchangeRate
+                    details, modulesMRR, includedTx, setupHours, setupDays,
+                    packTx, packPrice, extraTx, extraTxCost, totalTx, unitPrice,
+                    usersIncluded, userPackSize, userPackPrice, extraUsersCost, totalUsers,
+                    addonsMRR, addonsSetup, mrrBreakdown, setupBreakdown, customItems,
+                    platformPrice, totalMRR, setupLaborCost, totalSetup
                 };
-            }, [config, selectedModules, moduleConfigs, selectedGlobalTier, selectedAI, customSelections]);
+            }, [config, selectedModules, extraTxPacks, extraUserPacks, customSelections, hoursOverride]);
 
-
+            // --- פעולות משתמש ---
             const handlePrint = () => window.print();
 
+            const toggleModule = (id) => {
+                setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
+            };
+
             function clearUserSelections() {
-                if(window.confirm('האם אתה בטוח שברצונך לנקות את כל הבחירות ולהתחיל פרויקט חדש?')) {
+                if (window.confirm('לנקות את כל הבחירות ולהתחיל אומדן חדש? (המחירון והלוגו שלך יישמרו)')) {
                     setClientName('');
-                    setImplementerName('');
                     setQuoteDate(new Date().toISOString().split('T')[0]);
                     setSelectedModules([]);
-                    setModuleConfigs({});
-                    setSelectedGlobalTier('S');
-                    setSelectedAI('none');
+                    setHoursOverride({});
+                    setExtraTxPacks(0);
+                    setExtraUserPacks(0);
                     setCustomSelections({});
                 }
             }
 
-            const toggleModule = (id) => {
-                setSelectedModules(prev => {
-                    if (prev.includes(id)) {
-                        const newConfigs = { ...moduleConfigs };
-                        delete newConfigs[id];
-                        setModuleConfigs(newConfigs);
-                        return prev.filter(m => m !== id);
-                    } else {
-                        return [...prev, id];
-                    }
-                });
-            };
-
-            const updateModuleConfig = (moduleId, field, value) => {
-                setModuleConfigs(prev => ({
-                    ...prev,
-                    [moduleId]: {
-                        ...prev[moduleId],
-                        [field]: value
-                    }
-                }));
-            };
-            
-            // --- Admin Helpers ---
+            // --- עזרי ניהול ---
             const updateConfigValue = (path, val) => {
-               const newConfig = JSON.parse(JSON.stringify(config));
-               let current = newConfig;
-               for(let i=0; i<path.length-1; i++) current = current[path[i]];
-               current[path[path.length-1]] = val;
-               setConfig(newConfig);
+                const next = JSON.parse(JSON.stringify(config));
+                let cur = next;
+                for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]];
+                cur[path[path.length - 1]] = val;
+                setConfig(next);
             };
 
-            // הוספת חבילות משתמשים בניהול
-            const addUserPackage = (type) => {
-                const arrName = type === 'public' ? 'publicUserPackages' : 'privateUserPackages';
-                const newPkgs = [...config[arrName]];
-                newPkgs.push({ id: `${type}_${Date.now()}`, name: 'חבילה חדשה', price: 100 });
-                updateConfigValue([arrName], newPkgs);
+            // שינוי רמת מודול - מיישר גם את המחיר ומכסת הטרנזקציות לרמה החדשה
+            const setModuleTier = (idx, tier) => {
+                const next = JSON.parse(JSON.stringify(config));
+                const tierDef = next.moduleTiers[tier];
+                next.modules[idx].tier = tier;
+                next.modules[idx].price = tierDef.price;
+                next.modules[idx].includedTx = tierDef.tx;
+                setConfig(next);
+            };
+
+            // עדכון הגדרת רמה - מסנכרן את כל המודולים באותה רמה
+            const updateTierDef = (tier, field, val) => {
+                const next = JSON.parse(JSON.stringify(config));
+                next.moduleTiers[tier][field] = val;
+                next.modules.forEach(m => {
+                    if (m.tier !== tier) return;
+                    if (field === 'price') m.price = val;
+                    if (field === 'tx') m.includedTx = val;
+                });
+                setConfig(next);
             };
 
             const duplicateModule = (moduleId) => {
-                const moduleToCopy = config.modules.find(m => m.id === moduleId);
-                if (!moduleToCopy) return;
-
-                const newModuleId = "mod_" + Date.now();
-                const copiedModule = JSON.parse(JSON.stringify(moduleToCopy));
-                
-                copiedModule.id = newModuleId;
-                copiedModule.name = `${copiedModule.name} (עותק)`;
-                
-                if (copiedModule.tiers) {
-                    copiedModule.tiers.forEach((t, idx) => {
-                        t.id = `t_${Date.now()}_${idx}`;
-                    });
-                }
-
-                setConfig(prev => ({
-                    ...prev,
-                    modules: [...prev.modules, copiedModule]
-                }));
+                const src = config.modules.find(m => m.id === moduleId);
+                if (!src) return;
+                const copy = JSON.parse(JSON.stringify(src));
+                copy.id = 'mod_' + Date.now();
+                copy.name = src.name + ' (עותק)';
+                setConfig(prev => ({ ...prev, modules: [...prev.modules, copy] }));
             };
 
             const addNewModule = () => {
-                if(!newModule.name) return;
-                const id = "mod_" + Date.now();
-                setConfig(prev => ({ 
-                    ...prev, 
-                    modules: [...prev.modules, { 
-                        ...newModule, 
-                        id, 
-                        setupDays: Number(newModule.setupDays),
-                        note: newModule.note || '',
-                        tiers: generateDefaultTiers(id)
-                    }] 
+                if (!newModule.name) return;
+                const tierDef = config.moduleTiers[newModule.tier];
+                const id = 'mod_' + Date.now();
+                setConfig(prev => ({
+                    ...prev,
+                    modules: [...prev.modules, {
+                        id,
+                        name: newModule.name,
+                        icon: newModule.icon,
+                        tier: newModule.tier,
+                        price: tierDef.price,
+                        includedTx: tierDef.tx,
+                        setupHours: Number(newModule.setupHours) || 0,
+                        note: newModule.note || ''
+                    }]
                 }));
-                setNewModule({ name: '', icon: 'package', setupDays: 0, note: '' });
+                setNewModule({ name: '', icon: 'package', tier: 'basic', setupHours: 0, note: '' });
+            };
+
+            const deleteModule = (idx, id) => {
+                const next = [...config.modules];
+                next.splice(idx, 1);
+                updateConfigValue(['modules'], next);
+                setSelectedModules(prev => prev.filter(m => m !== id));
             };
 
             const addNewSection = () => {
-                if(!newSectionTitle) return;
-                const id = "sec_" + Date.now();
-                setConfig(prev => ({ ...prev, customSections: [...prev.customSections, { id, title: newSectionTitle, packages: [{ id: id+'_0', name: 'לא נבחר', price: 0, isOneTime: false }] }] }));
+                if (!newSectionTitle) return;
+                const id = 'sec_' + Date.now();
+                setConfig(prev => ({
+                    ...prev,
+                    customSections: [...prev.customSections, {
+                        id, title: newSectionTitle,
+                        packages: [{ id: id + '_0', name: 'לא נבחר', price: 0, isOneTime: false }]
+                    }]
+                }));
                 setNewSectionTitle('');
             };
 
             const resetAdminConfig = () => {
-                if(window.confirm("לאפס את כל הגדרות הניהול לברירת המחדל? פעולה זו תמחוק את כל השינויים שעשית בניהול.")) {
+                if (window.confirm('לאפס את כל המחירון לברירת המחדל? הלוגו והשם שלך יישמרו.')) {
                     localStorage.removeItem(STORAGE_KEY);
                     setConfig(DEFAULT_CONFIG);
                 }
             };
 
             const exportConfig = () => {
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config));
-                const downloadAnchorNode = document.createElement('a');
-                downloadAnchorNode.setAttribute("href",     dataStr);
-                downloadAnchorNode.setAttribute("download", "oneflow_calculator_backup.json");
-                document.body.appendChild(downloadAnchorNode); 
-                downloadAnchorNode.click();
-                downloadAnchorNode.remove();
+                const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(config, null, 2));
+                const a = document.createElement('a');
+                a.setAttribute('href', dataStr);
+                a.setAttribute('download', 'oneflow_pricing_backup.json');
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
             };
 
             const importConfig = (event) => {
-                const fileReader = new FileReader();
-                fileReader.readAsText(event.target.files[0], "UTF-8");
-                fileReader.onload = e => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const fr = new FileReader();
+                fr.onload = e => {
                     try {
-                        const parsedData = JSON.parse(e.target.result);
-                        if (parsedData && parsedData.modules) {
-                            // --- מיגרציה: התאמת קובץ ישן למבנה החדש ---
-                            if (parsedData.enableUsers === undefined) parsedData.enableUsers = true;
-                            if (parsedData.enableGlobalTiers === undefined && parsedData.enableTiers === undefined) {
-                                parsedData.enableGlobalTiers = true;
-                            } else if (parsedData.enableGlobalTiers === undefined) {
-                                parsedData.enableGlobalTiers = parsedData.enableTiers; // תמיכה במפתח הישן
-                            }
-                            if (parsedData.enableAI === undefined) parsedData.enableAI = true;
-
-                            if (!parsedData.publicUserPackages) parsedData.publicUserPackages = DEFAULT_CONFIG.publicUserPackages;
-                            if (!parsedData.privateUserPackages) parsedData.privateUserPackages = DEFAULT_CONFIG.privateUserPackages;
-                            if (!parsedData.globalTiers) parsedData.globalTiers = parsedData.tiers || DEFAULT_CONFIG.globalTiers;
-
-                            parsedData.modules = parsedData.modules.map(m => ({
-                                ...m,
-                                tiers: m.tiers && m.tiers.length > 0 ? m.tiers : generateDefaultTiers(m.id),
-                                note: m.note || ''
-                            }));
-
-                            setConfig(parsedData);
-                            alert("ההגדרות נטענו והותאמו לגרסה החדשה בהצלחה!");
+                        const parsed = JSON.parse(e.target.result);
+                        if (parsed && parsed.modules) {
+                            setConfig(migrateConfig(parsed));
+                            alert('המחירון נטען והותאם למודל הטרנזקציות בהצלחה.');
                         } else {
-                            alert("קובץ לא חוקי או פגום.");
+                            alert('קובץ לא חוקי או פגום.');
                         }
-                    } catch (error) {
-                        alert("שגיאה בקריאת הקובץ.");
-                    }
+                    } catch { alert('שגיאה בקריאת הקובץ.'); }
                 };
+                fr.readAsText(file, 'UTF-8');
                 event.target.value = null;
             };
 
-            // --- Render Components ---
-            const ModuleButton = ({ module, isSelected }) => (
-                <button onClick={() => toggleModule(module.id)} className={`relative flex flex-col items-center justify-center p-4 rounded-xl transition-all border-2 ${isSelected ? 'border-blue-600 bg-blue-50 shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-                    <div className={`mb-2 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`}><Icon name={module.icon} size={24} /></div>
-                    <span className={`text-sm font-bold text-center ${isSelected ? 'text-blue-800' : 'text-slate-600'}`}>{module.name}</span>
-                    {isSelected && <div className="absolute top-2 right-2 text-blue-600"><Icon name="check-circle-2" size={16} /></div>}
-                </button>
+            // --- העלאת לוגו המיישם ---
+            const uploadImplementerLogo = (event) => {
+                const file = event.target.files[0];
+                event.target.value = null;
+                if (!file) return;
+                setLogoError('');
+                if (!file.type.startsWith('image/')) {
+                    setLogoError('יש לבחור קובץ תמונה (PNG / JPG / SVG).');
+                    return;
+                }
+                resizeImage(file, 600, (dataUrl) => {
+                    if (!dataUrl) { setLogoError('לא הצלחנו לקרוא את קובץ התמונה.'); return; }
+                    if (dataUrl.length > 2 * 1024 * 1024) {
+                        setLogoError('הלוגו כבד מדי לשמירה בדפדפן. נסה קובץ קטן יותר.');
+                        return;
+                    }
+                    setBrand(prev => ({ ...prev, logo: dataUrl }));
+                });
+            };
+
+            const removeImplementerLogo = () => {
+                setLogoError('');
+                setBrand(prev => ({ ...prev, logo: null }));
+            };
+
+            // --- רכיבי תצוגה ---
+            const tierMeta = (tier) => tier === 'premium'
+                ? { label: config.moduleTiers.premium.label, chip: 'bg-violet-100 text-violet-700', ring: 'border-violet-500 bg-violet-50', dot: 'text-violet-600' }
+                : { label: config.moduleTiers.basic.label,   chip: 'bg-blue-100 text-blue-700',     ring: 'border-blue-600 bg-blue-50',    dot: 'text-blue-600' };
+
+            const ModuleCard = ({ m, isSelected }) => {
+                const t = tierMeta(m.tier);
+                return (
+                    <button onClick={() => toggleModule(m.id)}
+                        className={`relative flex flex-col items-start text-right p-4 rounded-2xl transition-all border-2 h-full ${isSelected ? t.ring + ' shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                        {isSelected && <div className={`absolute top-3 left-3 ${t.dot}`}><Icon name="check-circle-2" size={18} /></div>}
+                        <div className={`mb-3 p-2 rounded-xl ${isSelected ? 'bg-white' : 'bg-slate-50'} ${isSelected ? t.dot : 'text-slate-400'}`}>
+                            <Icon name={m.icon} size={22} />
+                        </div>
+                        <span className={`text-sm font-black leading-tight ${isSelected ? 'text-slate-900' : 'text-slate-700'}`}>{m.name}</span>
+                        <span className={`mt-2 text-[10px] font-black px-2 py-0.5 rounded-full ${t.chip}`}>{t.label}</span>
+                        {m.note && <span className="mt-2 text-[11px] text-slate-400 leading-snug line-clamp-3">{m.note}</span>}
+                        <div className="mt-auto pt-3 w-full border-t border-dashed border-slate-200 mt-3">
+                            <div className="font-black text-slate-900">{money(m.price)}<span className="text-[10px] font-normal text-slate-400"> /חודש</span></div>
+                            <div className="text-[10px] text-slate-500 font-bold">{fmt(m.includedTx)} טרנזקציות כלולות</div>
+                        </div>
+                    </button>
+                );
+            };
+
+            // כפתור מדרגה (+/-)
+            const Stepper = ({ value, onChange, min = 0 }) => (
+                <div className="flex items-center gap-2">
+                    <button onClick={() => onChange(Math.max(min, value - 1))}
+                        className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center">−</button>
+                    <input type="number" min={min} value={value}
+                        onChange={e => onChange(Math.max(min, Number(e.target.value) || 0))}
+                        className="w-16 text-center p-2 border rounded-lg font-black bg-white" />
+                    <button onClick={() => onChange(value + 1)}
+                        className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center">+</button>
+                </div>
             );
 
             return (
                 <div dir="rtl" className="min-h-screen bg-slate-50">
-                    
-                    {/* Header */}
-                    <header className="no-print sticky top-0 z-50 bg-white border-b shadow-sm h-16 flex items-center justify-between px-6">
-                        <div className="flex items-center gap-4">
-                            <img src="oneflowlogo.png" alt="ONEFLOW 360 PRO" className="h-8 object-contain" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                            <div style={{display:'none'}} className="items-center gap-2">
-                                <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-lg">1</div>
-                                <div className="text-xl font-bold">ONEFLOW <span className="text-blue-600">360 PRO</span></div>
-                            </div>
-                            <span className="text-sm font-medium text-slate-400 border-r-2 border-slate-200 pr-4 hidden lg:block">מחשבון אומדן פרויקטים למיישם</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                             <input type="text" placeholder="שם המיישם" value={implementerName} onChange={e => setImplementerName(e.target.value)} className="hidden lg:block p-2 border border-blue-200 rounded-lg text-sm w-32 bg-blue-50 placeholder-blue-400 font-bold" />
-                             <input type="text" placeholder="שם פרויקט / לקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm w-40 bg-slate-50" />
-                             <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="hidden md:block p-2 border rounded-lg text-sm bg-slate-50" />
-                             
-                             <button onClick={clearUserSelections} className="flex items-center gap-1 p-2 text-sm font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                                 <Icon name="rotate-ccw" size={16} /> <span className="hidden md:inline">נקה</span>
-                             </button>
 
-                            <button onClick={() => setIsAdminOpen(true)} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-600"><Icon name="settings" /></button>
+                    {/* Header */}
+                    <header className="no-print sticky top-0 z-50 bg-white border-b shadow-sm h-16 flex items-center justify-between px-4 md:px-6 gap-3">
+                        <div className="flex items-center gap-4 min-w-0">
+                            <BrandLogo src={config.brandLogo} className="h-8 object-contain flex-shrink-0" />
+                            {brand.logo && (
+                                <>
+                                    <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
+                                    <img src={brand.logo} alt="לוגו המיישם" className="h-8 object-contain hidden md:block" />
+                                </>
+                            )}
+                            <span className="text-sm font-medium text-slate-400 border-r-2 border-slate-200 pr-4 hidden xl:block">מחשבון אומדן פרויקטים למיישם</span>
+                        </div>
+                        <div className="flex items-center gap-2 md:gap-3">
+                            <input type="text" placeholder="שם המיישם" value={brand.name}
+                                onChange={e => setBrand({ ...brand, name: e.target.value })}
+                                className="hidden lg:block p-2 border border-blue-200 rounded-lg text-sm w-32 bg-blue-50 placeholder-blue-400 font-bold" />
+                            <input type="text" placeholder="שם פרויקט / לקוח" value={clientName}
+                                onChange={e => setClientName(e.target.value)}
+                                className="hidden md:block p-2 border rounded-lg text-sm w-40 bg-slate-50" />
+                            <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)}
+                                className="hidden md:block p-2 border rounded-lg text-sm bg-slate-50" />
+                            <button onClick={clearUserSelections}
+                                className="flex items-center gap-1 p-2 text-sm font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                <Icon name="rotate-ccw" size={16} /> <span className="hidden md:inline">נקה</span>
+                            </button>
+                            <button onClick={() => setIsAdminOpen(true)}
+                                className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-600"><Icon name="settings" /></button>
                         </div>
                     </header>
 
                     {/* Main Interface */}
                     <main className="no-print max-w-[90rem] mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8">
-                        
-                        {/* Center Column - Configurator */}
-                        <div className="flex-grow space-y-8 pb-24">
-                            
+
+                        <div className="flex-grow space-y-8 pb-24 min-w-0">
+
                             {/* Mobile Inputs */}
-                            <div className="lg:hidden space-y-2 bg-white p-4 rounded-xl border shadow-sm">
-                                <input type="text" placeholder="שם המיישם" value={implementerName} onChange={e => setImplementerName(e.target.value)} className="w-full p-3 border rounded-xl bg-blue-50 font-bold" />
-                                <input type="text" placeholder="שם פרויקט / לקוח" value={clientName} onChange={e => setClientName(e.target.value)} className="w-full p-3 border rounded-xl" />
-                                <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)} className="w-full p-3 border rounded-xl" />
+                            <div className="lg:hidden space-y-2 bg-white p-4 rounded-2xl border shadow-sm">
+                                <input type="text" placeholder="שם המיישם" value={brand.name}
+                                    onChange={e => setBrand({ ...brand, name: e.target.value })}
+                                    className="w-full p-3 border rounded-xl bg-blue-50 font-bold" />
+                                <input type="text" placeholder="שם פרויקט / לקוח" value={clientName}
+                                    onChange={e => setClientName(e.target.value)} className="w-full p-3 border rounded-xl" />
+                                <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)}
+                                    className="w-full p-3 border rounded-xl" />
                             </div>
 
-                            {/* 1. Modules Selection */}
-                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="database" className="text-blue-500"/> {config.uiText.modulesHeader}</h3>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                                    {config.modules.map(m => <ModuleButton key={m.id} module={m} isSelected={selectedModules.includes(m.id)} />)}
+                            {/* Platform banner */}
+                            <section className="bg-slate-900 text-white p-6 rounded-3xl shadow-lg flex flex-wrap justify-between items-center gap-4">
+                                <div className="min-w-0">
+                                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-300">חבילת הבסיס</div>
+                                    <h2 className="text-2xl font-black mt-1">{config.platformName}</h2>
+                                    <p className="text-sm text-slate-300 mt-1 max-w-xl">{config.platformDescription}</p>
+                                </div>
+                                <div className="text-left">
+                                    <div className="text-3xl font-black">{money(totals.platformPrice)}</div>
+                                    <div className="text-xs text-slate-400 font-bold">לחודש, לפני מודולים</div>
                                 </div>
                             </section>
 
-                            {/* 2. Module Configuration Tree (NEW) */}
-                            {selectedModules.length > 0 && (
-                                <section className="bg-blue-50/50 p-6 rounded-3xl shadow-inner border border-blue-100">
-                                    <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-blue-800"><Icon name="layers" className="text-blue-500"/> {config.uiText.moduleTreeHeader}</h3>
-                                    <div className="space-y-5">
-                                        {selectedModules.map(mId => {
-                                            const m = config.modules.find(x => x.id === mId);
-                                            const modConf = moduleConfigs[mId];
-                                            if (!m || !modConf) return null;
-                                            
-                                            // מחשב מחיר ספציפי למודול להצגה בממשק
-                                            const currentTier = m.tiers?.find(t => t.id === modConf.tierId);
-                                            const userPkgs = modConf.accessType === 'public' ? config.publicUserPackages : config.privateUserPackages;
-                                            const currentUserPkg = userPkgs.find(p => p.id === modConf.userPackageId) || userPkgs[0];
-                                            const currentTotal = (currentTier?.price || 0) + (currentUserPkg?.price || 0);
+                            {/* 1. Modules */}
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
+                                    <h3 className="text-lg font-bold flex items-center gap-2 text-slate-700">
+                                        <Icon name="database" className="text-blue-500" /> {config.uiText.modulesHeader}
+                                    </h3>
+                                    <div className="flex gap-2 text-[11px] font-black">
+                                        <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700">
+                                            {config.moduleTiers.basic.label} · {money(config.moduleTiers.basic.price)} · {fmt(config.moduleTiers.basic.tx)} טר'
+                                        </span>
+                                        <span className="px-3 py-1 rounded-full bg-violet-100 text-violet-700">
+                                            {config.moduleTiers.premium.label} · {money(config.moduleTiers.premium.price)} · {fmt(config.moduleTiers.premium.tx)} טר'
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                                    {config.modules.map(m => (
+                                        <ModuleCard key={m.id} m={m} isSelected={selectedModules.includes(m.id)} />
+                                    ))}
+                                </div>
+                                <p className="text-xs text-slate-400 mt-4 flex items-center gap-1.5">
+                                    <Icon name="check-circle-2" size={14} /> אין הגבלה על מספר המודולים — הלקוח בוחר את מה שרלוונטי לו.
+                                </p>
+                            </section>
 
-                                            return (
-                                                <div key={m.id} className="bg-white p-5 rounded-2xl border border-blue-100 shadow-sm transition-all hover:shadow-md">
-                                                    
-                                                    {/* כותרת מודול בעץ */}
-                                                    <div className="flex justify-between items-center border-b pb-3 mb-4">
-                                                        <div className="flex items-center gap-3 font-bold text-lg text-slate-800">
-                                                            <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Icon name={m.icon} size={20}/></div>
-                                                            {m.name}
-                                                            {m.note && <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-1 rounded-md hidden md:inline-block">{m.note}</span>}
-                                                        </div>
-                                                        <div className="text-xl font-black text-blue-700">${currentTotal} <span className="text-xs text-slate-400 font-normal">/חודש</span></div>
-                                                    </div>
+                            {/* 2. Setup hours */}
+                            <section className="bg-orange-50/50 p-6 rounded-3xl border border-orange-100">
+                                <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
+                                    <h3 className="text-lg font-bold flex items-center gap-2 text-orange-900">
+                                        <Icon name="hammer" className="text-orange-500" /> {config.uiText.setupHeader}
+                                    </h3>
+                                    <span className="text-xs font-black text-orange-700 bg-white px-3 py-1.5 rounded-full border border-orange-200">
+                                        תעריף שעה: {money(config.setupHourlyRate)}
+                                    </span>
+                                </div>
 
-                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                        {/* סוג גישה (Public/Private) */}
-                                                        <div className="space-y-2">
-                                                            <label className="text-xs font-bold text-slate-500 block">סוג חשיפה / גישה למודול</label>
-                                                            <div className="flex p-1 bg-slate-100 rounded-lg">
-                                                                <button 
-                                                                    onClick={() => {
-                                                                        const newPkg = config.privateUserPackages[0]?.id || '';
-                                                                        updateModuleConfig(m.id, 'accessType', 'private');
-                                                                        updateModuleConfig(m.id, 'userPackageId', newPkg);
-                                                                    }}
-                                                                    className={`flex-1 py-2 text-sm font-bold rounded-md transition-all flex justify-center items-center gap-2 ${modConf.accessType === 'private' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
-                                                                >
-                                                                    <Icon name="lock" size={14}/> פנימי (Private)
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => {
-                                                                        const newPkg = config.publicUserPackages[0]?.id || '';
-                                                                        updateModuleConfig(m.id, 'accessType', 'public');
-                                                                        updateModuleConfig(m.id, 'userPackageId', newPkg);
-                                                                    }}
-                                                                    className={`flex-1 py-2 text-sm font-bold rounded-md transition-all flex justify-center items-center gap-2 ${modConf.accessType === 'public' ? 'bg-white shadow text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}
-                                                                >
-                                                                    <Icon name="globe" size={14}/> חיצוני (Public)
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* חבילת משתמשים למודול */}
-                                                        <div className="space-y-2">
-                                                            <label className="text-xs font-bold text-slate-500 block flex items-center justify-between">
-                                                                חבילת משתמשים מורשים
-                                                                <span className="text-blue-500">${currentUserPkg?.price || 0}</span>
-                                                            </label>
-                                                            <select 
-                                                                value={modConf.userPackageId} 
-                                                                onChange={(e) => updateModuleConfig(m.id, 'userPackageId', e.target.value)}
-                                                                className="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-bold focus:ring-2 ring-blue-200 outline-none"
-                                                            >
-                                                                {userPkgs.map(p => (
-                                                                    <option key={p.id} value={p.id}>{p.name} (+${p.price})</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-
-                                                        {/* מדרגת עומס/טרנזקציות למודול */}
-                                                        <div className="space-y-2">
-                                                            <label className="text-xs font-bold text-slate-500 block flex items-center justify-between">
-                                                                מדרגת טרנזקציות / עומס
-                                                                <span className="text-blue-500">${currentTier?.price || 0}</span>
-                                                            </label>
-                                                            <select 
-                                                                value={modConf.tierId} 
-                                                                onChange={(e) => updateModuleConfig(m.id, 'tierId', e.target.value)}
-                                                                className="w-full p-2.5 border rounded-lg bg-slate-50 text-sm font-bold focus:ring-2 ring-blue-200 outline-none"
-                                                            >
-                                                                {m.tiers?.map(t => (
-                                                                    <option key={t.id} value={t.id}>{t.name} (+${t.price})</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    </div>
+                                {totals.details.length === 0 ? (
+                                    <p className="text-sm text-slate-400 py-6 text-center">בחר מודולים כדי לראות את אומדן ההקמה.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {totals.details.map(m => (
+                                            <div key={m.id} className="bg-white p-3 rounded-xl border border-orange-100 flex flex-wrap items-center gap-3">
+                                                <div className="p-2 bg-orange-50 text-orange-500 rounded-lg"><Icon name={m.icon} size={18} /></div>
+                                                <div className="font-bold text-slate-800 flex-grow min-w-0 truncate">{m.name}</div>
+                                                <div className="flex items-center gap-2">
+                                                    <label className="text-[11px] font-bold text-slate-400">שעות</label>
+                                                    <input type="number" min="0" value={m.hours}
+                                                        onChange={e => setHoursOverride({ ...hoursOverride, [m.id]: Math.max(0, Number(e.target.value) || 0) })}
+                                                        className="w-20 p-2 border rounded-lg text-center font-black bg-orange-50/60" />
                                                 </div>
-                                            )
-                                        })}
-                                    </div>
-                                </section>
-                            )}
-
-                            {/* Global Tiers (Optional via Admin) */}
-                            {config.enableGlobalTiers && (
-                                <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="activity" className="text-blue-500"/> {config.uiText.tiersHeader}</h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                                        {config.globalTiers.map(t => (
-                                            <button key={t.id} onClick={() => setSelectedGlobalTier(t.id)} className={`p-4 rounded-2xl border-2 text-right transition-all ${selectedGlobalTier === t.id ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-100 hover:border-slate-200'}`}>
-                                                <div className="font-bold text-slate-700 text-sm">{t.name}</div>
-                                                <div className="text-[10px] text-slate-400 mb-2">עד {t.limit.toLocaleString()}</div>
-                                                <div className="text-xl font-black text-slate-900">${t.price}</div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </section>
-                            )}
-
-                            {/* AI Packages */}
-                            {config.enableAI && (
-                                <section className="p-6 rounded-3xl border-2 border-violet-100 bg-gradient-to-br from-white to-violet-50/50">
-                                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-violet-900"><Icon name="sparkles" className="text-violet-600"/> {config.uiText.aiHeader}</h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        {config.aiPackages.map(pkg => (
-                                            <button key={pkg.id} onClick={() => setSelectedAI(pkg.id)} className={`p-5 rounded-2xl border transition-all text-right ${selectedAI === pkg.id ? 'border-violet-600 bg-white shadow-lg' : 'border-slate-200/60 bg-white/60 hover:bg-white'}`}>
-                                                <div className="flex justify-between items-start">
-                                                    <span className="font-bold text-violet-800">{pkg.name}</span>
-                                                    <span className="font-black text-lg">${pkg.price}</span>
+                                                <div className="w-28 text-left font-black text-orange-700">
+                                                    {money(m.hours * config.setupHourlyRate)}
                                                 </div>
-                                                <p className="text-xs text-slate-500 mt-1">{pkg.description}</p>
-                                            </button>
+                                            </div>
                                         ))}
+                                        <div className="flex flex-wrap items-center gap-3 bg-orange-100/60 p-4 rounded-xl mt-3 font-black text-orange-900">
+                                            <Icon name="clock" size={18} />
+                                            <span className="flex-grow">סה"כ {fmt(totals.setupHours)} שעות הקמה (≈ {totals.setupDays.toFixed(1)} ימי עבודה)</span>
+                                            <span className="text-xl">{money(totals.setupLaborCost)}</span>
+                                        </div>
                                     </div>
-                                </section>
-                            )}
+                                )}
+                                <p className="text-xs text-orange-700/70 mt-4">
+                                    ניתן לעדכן את השעות לאומדן הנוכחי מבלי לשנות את המחירון. ברירות המחדל נקבעות במסך הניהול.
+                                </p>
+                            </section>
+
+                            {/* 3. Transaction packages */}
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <h3 className="text-lg font-bold mb-5 flex items-center gap-2 text-slate-700">
+                                    <Icon name="activity" className="text-blue-500" /> {config.uiText.txHeader}
+                                </h3>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+                                    <div className="bg-slate-50 p-4 rounded-2xl border">
+                                        <div className="text-[11px] font-bold text-slate-500">כלול במודולים שנבחרו</div>
+                                        <div className="text-2xl font-black text-slate-800 mt-1">{fmt(totals.includedTx)}</div>
+                                    </div>
+                                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                                        <div className="text-[11px] font-bold text-blue-600">תוספת שנרכשה</div>
+                                        <div className="text-2xl font-black text-blue-800 mt-1">+{fmt(totals.extraTx)}</div>
+                                    </div>
+                                    <div className="bg-slate-900 text-white p-4 rounded-2xl">
+                                        <div className="text-[11px] font-bold text-blue-300">סה"כ מכסה חודשית</div>
+                                        <div className="text-2xl font-black mt-1">{fmt(totals.totalTx)}</div>
+                                    </div>
+                                </div>
+
+                                <div className="text-[11px] font-bold text-slate-500 mb-2">
+                                    תחנות תוספת — כל חבילה: {fmt(totals.packTx)} טרנזקציות ב-{money(totals.packPrice)}
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                                    {config.txStations.map(packs => {
+                                        const active = extraTxPacks === packs;
+                                        return (
+                                            <button key={packs} onClick={() => setExtraTxPacks(packs)}
+                                                className={`p-3 rounded-xl border-2 text-right transition-all ${active ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-100 hover:border-slate-200'}`}>
+                                                <div className="text-[10px] font-bold text-slate-400">{packs === 0 ? 'ללא תוספת' : packs + ' חבילות'}</div>
+                                                <div className="font-black text-slate-800 text-sm">+{fmt(packs * totals.packTx)}</div>
+                                                <div className="text-[11px] font-black text-blue-600">{money(packs * totals.packPrice)}</div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-4 mt-5 pt-5 border-t border-dashed">
+                                    <span className="text-sm font-bold text-slate-600">כמות חבילות מדויקת:</span>
+                                    <Stepper value={extraTxPacks} onChange={setExtraTxPacks} />
+                                    <span className="text-sm font-black text-blue-700 mr-auto">{money(totals.extraTxCost)} /חודש</span>
+                                </div>
+                            </section>
+
+                            {/* 4. Users */}
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <h3 className="text-lg font-bold mb-5 flex items-center gap-2 text-slate-700">
+                                    <Icon name="users" className="text-blue-500" /> {config.uiText.usersHeader}
+                                </h3>
+                                <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+                                    <div>
+                                        <div className="text-[11px] font-bold text-slate-500">כלול בחבילה</div>
+                                        <div className="text-2xl font-black text-slate-800">עד {fmt(totals.usersIncluded)} משתמשים</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[11px] font-bold text-slate-500">
+                                            חבילות נוספות ({fmt(totals.userPackSize)} משתמשים ב-{money(totals.userPackPrice)})
+                                        </div>
+                                        <div className="mt-1"><Stepper value={extraUserPacks} onChange={setExtraUserPacks} /></div>
+                                    </div>
+                                    <div className="bg-slate-900 text-white px-5 py-3 rounded-2xl">
+                                        <div className="text-[11px] font-bold text-blue-300">סה"כ משתמשים</div>
+                                        <div className="text-2xl font-black">{fmt(totals.totalUsers)}</div>
+                                    </div>
+                                    <div className="text-lg font-black text-blue-700 mr-auto">{money(totals.extraUsersCost)} /חודש</div>
+                                </div>
+                            </section>
 
                             {/* Custom Sections */}
                             {config.customSections.map(sec => (
                                 <section key={sec.id} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700"><Icon name="puzzle" className="text-blue-500"/> {sec.title}</h3>
+                                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700">
+                                        <Icon name="puzzle" className="text-blue-500" /> {sec.title}
+                                    </h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         {sec.packages.map(pkg => (
-                                            <button key={pkg.id} onClick={() => setCustomSelections({...customSelections, [sec.id]: pkg.id})} className={`p-4 rounded-2xl border-2 transition-all flex justify-between items-center ${customSelections[sec.id] === pkg.id ? 'border-blue-600 bg-blue-50' : 'border-slate-100'}`}>
+                                            <button key={pkg.id}
+                                                onClick={() => setCustomSelections({ ...customSelections, [sec.id]: pkg.id })}
+                                                className={`p-4 rounded-2xl border-2 transition-all flex justify-between items-center ${customSelections[sec.id] === pkg.id ? 'border-blue-600 bg-blue-50' : 'border-slate-100'}`}>
                                                 <div className="text-right">
                                                     <div className="font-bold text-slate-800">{pkg.name}</div>
                                                     {pkg.isOneTime && <span className="text-[10px] bg-orange-50 text-orange-600 px-2 rounded font-bold">חד-פעמי</span>}
                                                 </div>
-                                                <div className="text-xl font-black text-slate-900">${pkg.price}</div>
+                                                <div className="text-xl font-black text-slate-900">{money(pkg.price)}</div>
                                             </button>
                                         ))}
                                     </div>
@@ -697,514 +810,640 @@
 
                         {/* Sidebar Summary */}
                         <div className={`lg:w-96 flex-shrink-0 ${showSummary ? 'fixed inset-0 z-50 bg-white p-6 overflow-y-auto' : 'hidden lg:block'}`}>
-                             {showSummary && <button onClick={() => setShowSummary(false)} className="absolute top-4 left-4 p-2 bg-slate-100 rounded-full"><Icon name="x"/></button>}
-                             
-                             <div className="lg:sticky lg:top-24 bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden">
+                            {showSummary && (
+                                <button onClick={() => setShowSummary(false)} className="absolute top-4 left-4 p-2 bg-slate-100 rounded-full">
+                                    <Icon name="x" />
+                                </button>
+                            )}
+                            <div className="lg:sticky lg:top-24 bg-white rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden">
                                 <div className="bg-slate-900 text-white p-8">
                                     <h2 className="text-2xl font-black uppercase tracking-tight">סיכום אומדן פנימי</h2>
+                                    <p className="text-xs text-slate-400 mt-1">{config.platformName}</p>
                                 </div>
                                 <div className="p-8 space-y-6">
-                                    
-                                    <div className="space-y-3 pb-6 border-b border-dashed border-slate-200 text-sm">
-                                        <div className="flex justify-between font-bold text-slate-700"><span>מודולים וחבילות תשתית</span><span>${totals.modulesMRR.toLocaleString()}</span></div>
-                                        {config.enableGlobalTiers && <div className="flex justify-between text-slate-600"><span>חבילת טרנזקציות מערכתית</span><span>${(totals.globalTierObj?.price || 0).toLocaleString()}</span></div>}
-                                        
-                                        {/* פירוט תוספות חודשיות */}
+
+                                    <div className="space-y-2 pb-6 border-b border-dashed border-slate-200 text-sm">
+                                        {totals.platformPrice > 0 && (
+                                            <div className="flex justify-between text-slate-600"><span>פלטפורמה</span><span>{money(totals.platformPrice)}</span></div>
+                                        )}
+                                        <div className="flex justify-between font-bold text-slate-700">
+                                            <span>מודולים ({totals.details.length})</span><span>{money(totals.modulesMRR)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-slate-600">
+                                            <span>תוספת טרנזקציות ({fmt(totals.extraTx)})</span><span>{money(totals.extraTxCost)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-slate-600">
+                                            <span>משתמשים נוספים ({fmt(extraUserPacks * totals.userPackSize)})</span><span>{money(totals.extraUsersCost)}</span>
+                                        </div>
                                         {totals.mrrBreakdown.map((item, i) => (
                                             <div key={i} className="flex justify-between text-blue-700 bg-blue-50 p-2 rounded text-xs font-bold items-center mt-2">
-                                                <span className="truncate pl-2">{item.label}</span>
-                                                <span>${item.price.toLocaleString()}</span>
+                                                <span className="truncate pl-2">{item.label}</span><span>{money(item.price)}</span>
                                             </div>
                                         ))}
                                     </div>
 
                                     {/* MRR */}
                                     <div>
-                                        <div className="flex justify-between items-end mb-1">
-                                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">אומדן חודשי קבוע (MRR)</span>
-                                            <span className="text-4xl font-black text-slate-900 leading-none">${totals.totalMRR.toLocaleString()}</span>
+                                        <div className="flex justify-between items-end mb-1 gap-2">
+                                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">חיוב חודשי (MRR)</span>
+                                            <span className="text-3xl font-black text-slate-900 leading-none whitespace-nowrap">{money(totals.totalMRR)}</span>
                                         </div>
-                                        <div className="text-left text-xs font-bold text-slate-400">≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
+                                        <div className="text-left text-xs font-bold text-slate-400">{usd(totals.totalMRR, config.exchangeRate)}</div>
+                                        <div className="text-left text-[11px] font-bold text-slate-400 mt-1">
+                                            {fmt(totals.totalTx)} טרנזקציות · {fmt(totals.totalUsers)} משתמשים
+                                        </div>
                                     </div>
 
                                     {/* SETUP */}
                                     <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs font-black text-orange-800 uppercase tracking-wide">הקמה ואפיון (Setup)</span>
-                                            <span className="text-2xl font-black text-orange-700">${totals.totalSetup.toLocaleString()}</span>
+                                        <div className="flex justify-between items-center mb-2 gap-2">
+                                            <span className="text-xs font-black text-orange-800 uppercase tracking-wide">הקמה (חד-פעמי)</span>
+                                            <span className="text-2xl font-black text-orange-700 whitespace-nowrap">{money(totals.totalSetup)}</span>
                                         </div>
-
-                                        {/* פירוט תוספות חד פעמיות */}
                                         {totals.setupBreakdown.length > 0 && (
                                             <div className="mb-3 space-y-1 mt-3 border-t border-orange-200/50 pt-2">
                                                 {totals.setupBreakdown.map((item, i) => (
                                                     <div key={i} className="flex justify-between text-[10px] text-orange-800 opacity-80">
-                                                        <span>{item.label}</span><span>${item.price}</span>
+                                                        <span>{item.label}</span><span>{money(item.price)}</span>
                                                     </div>
                                                 ))}
                                             </div>
                                         )}
-
-                                        <div className="text-left text-[10px] text-orange-600 font-bold mb-3 border-t border-orange-200 pt-2 mt-2">≈ {Math.round(totals.nisSetup).toLocaleString()} ₪</div>
+                                        <div className="text-left text-[10px] text-orange-600 font-bold mb-3 border-t border-orange-200 pt-2 mt-2">
+                                            {usd(totals.totalSetup, config.exchangeRate)}
+                                        </div>
                                         <div className="flex items-center gap-2 text-xs font-black text-orange-800 bg-white/50 p-2 rounded-lg">
-                                            <Icon name="clock" size={16}/> <span>זמן משוער: {totals.totalSetupDays} ימי עבודה</span>
+                                            <Icon name="clock" size={16} />
+                                            <span>{fmt(totals.setupHours)} שעות × {money(config.setupHourlyRate)} (≈ {totals.setupDays.toFixed(1)} ימים)</span>
                                         </div>
                                     </div>
 
-                                    <button onClick={handlePrint} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-xl shadow-lg flex items-center justify-center gap-2">
-                                        <Icon name="file-text"/> הפק אומדן (PDF)
+                                    <button onClick={handlePrint}
+                                        className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-xl shadow-lg flex items-center justify-center gap-2">
+                                        <Icon name="file-text" /> הפק אומדן (PDF)
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </main>
-                    
+
                     {/* Mobile Floating Button */}
                     <div className="no-print fixed bottom-4 left-4 right-4 lg:hidden z-40">
-                        <button onClick={() => setShowSummary(true)} className="w-full bg-slate-900 text-white p-4 rounded-full shadow-2xl flex justify-between font-bold border border-slate-700">
+                        <button onClick={() => setShowSummary(true)}
+                            className="w-full bg-slate-900 text-white p-4 rounded-full shadow-2xl flex justify-between font-bold border border-slate-700">
                             <span>סיכום אומדן</span>
-                            <span>${totals.totalMRR.toLocaleString()} /חודש</span>
+                            <span>{money(totals.totalMRR)} /חודש</span>
                         </button>
                     </div>
 
                     {/* --- Admin Full Screen Modal --- */}
                     {isAdminOpen && (
                         <div className="admin-modal fixed inset-0 z-[60] bg-white overflow-hidden flex flex-col">
-                            {/* Admin Header */}
-                            <div className="flex justify-between items-center p-6 border-b bg-slate-50">
-                                <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800"><Icon name="settings" className="text-blue-600"/> הגדרות מערכת (שינויים נשמרים אוטומטית)</h2>
-                                <div className="flex gap-4">
-                                    <input type="file" accept=".json" style={{display: 'none'}} ref={fileInputRef} onChange={importConfig} />
-                                    <button onClick={() => fileInputRef.current.click()} className="text-slate-600 hover:bg-slate-200 font-bold text-sm flex items-center gap-1 border border-slate-300 px-3 py-1.5 rounded-lg"><Icon name="upload" size={14}/> ייבוא מגיבוי</button>
-                                    <button onClick={exportConfig} className="text-blue-600 hover:bg-blue-50 font-bold text-sm flex items-center gap-1 border border-blue-200 px-3 py-1.5 rounded-lg"><Icon name="download" size={14}/> ייצא לגיבוי</button>
-                                    <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                                    <button onClick={resetAdminConfig} className="text-red-500 hover:bg-red-50 font-bold text-sm flex items-center gap-1 border border-red-200 px-3 py-1.5 rounded-lg"><Icon name="rotate-ccw" size={14}/> איפוס מוחלט</button>
-                                    <button onClick={() => setIsAdminOpen(false)} className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded-lg font-bold">סגור חלון</button>
+                            <div className="flex flex-wrap justify-between items-center gap-3 p-4 md:p-6 border-b bg-slate-50">
+                                <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-slate-800">
+                                    <Icon name="settings" className="text-blue-600" /> הגדרות מערכת ומחירון
+                                    <span className="text-xs font-normal text-slate-400">(נשמר אוטומטית)</span>
+                                </h2>
+                                <div className="flex flex-wrap gap-2 md:gap-4 items-center">
+                                    <input type="file" accept=".json" style={{ display: 'none' }} ref={fileInputRef} onChange={importConfig} />
+                                    <button onClick={() => fileInputRef.current.click()}
+                                        className="text-slate-600 hover:bg-slate-200 font-bold text-sm flex items-center gap-1 border border-slate-300 px-3 py-1.5 rounded-lg">
+                                        <Icon name="upload" size={14} /> ייבוא מגיבוי
+                                    </button>
+                                    <button onClick={exportConfig}
+                                        className="text-blue-600 hover:bg-blue-50 font-bold text-sm flex items-center gap-1 border border-blue-200 px-3 py-1.5 rounded-lg">
+                                        <Icon name="download" size={14} /> ייצא לגיבוי
+                                    </button>
+                                    <button onClick={resetAdminConfig}
+                                        className="text-red-500 hover:bg-red-50 font-bold text-sm border border-red-200 px-3 py-1.5 rounded-lg">איפוס מחירון</button>
+                                    <button onClick={() => setIsAdminOpen(false)}
+                                        className="bg-slate-900 text-white px-6 py-2 rounded-xl font-bold hover:bg-slate-700">סגור</button>
                                 </div>
                             </div>
 
-                            {/* Admin Content - Scrollable */}
-                            <div className="flex-grow overflow-y-auto p-8 custom-scroll">
-                                <div className="max-w-5xl mx-auto space-y-12 pb-20">
-                                    
-                                    {/* Global Settings */}
-                                    <div className="grid grid-cols-1 gap-8">
-                                        <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
-                                            <h3 className="font-bold mb-4 text-orange-800 text-lg border-b border-orange-200 pb-2">הגדרות אומדן פרויקט והקמה גלובליות</h3>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                                                <div><label className="text-xs font-bold text-orange-700 mb-1 block">תעריף שעה ($)</label><input type="number" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.setupHourlyRate} onChange={e => updateConfigValue(['setupHourlyRate'], Number(e.target.value))} /></div>
-                                                <div><label className="text-xs font-bold text-orange-700 mb-1 block">שעות ביום עבודה</label><input type="number" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.setupHoursPerDay} onChange={e => updateConfigValue(['setupHoursPerDay'], Number(e.target.value))} /></div>
-                                                <div><label className="text-xs font-bold text-orange-700 mb-1 block">שער דולר (₪)</label><input type="number" step="0.1" className="w-full p-3 border border-orange-200 rounded-xl bg-white" value={config.exchangeRate} onChange={e => updateConfigValue(['exchangeRate'], Number(e.target.value))} /></div>
+                            <div className="flex-grow overflow-y-auto custom-scroll bg-slate-50">
+                                <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-10">
+
+                                    {/* מיתוג ולוגו */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6 flex items-center gap-2">
+                                            <Icon name="image" className="text-blue-600" /> מיתוג ולוגו
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="bg-slate-50 p-5 rounded-2xl border">
+                                                <h4 className="font-bold text-slate-700 mb-3">לוגו המוצר (קבוע)</h4>
+                                                <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
+                                                    <BrandLogo src={config.brandLogo} className="max-h-16 object-contain" />
+                                                </div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">שם קובץ הלוגו (בתיקיית המערכת)</label>
+                                                <input value={config.brandLogo}
+                                                    onChange={e => updateConfigValue(['brandLogo'], e.target.value)}
+                                                    className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                                                    הקובץ נטען מהתיקייה הראשית של המערכת, לצד index.html. אם הוא חסר — מוצג הלוגו הישן, ואם גם הוא חסר — מוצג טקסט.
+                                                </p>
+                                            </div>
+
+                                            <div className="bg-blue-50 p-5 rounded-2xl border border-blue-200">
+                                                <h4 className="font-bold text-blue-800 mb-3">הלוגו שלך (המיישם)</h4>
+                                                <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
+                                                    {brand.logo
+                                                        ? <img src={brand.logo} alt="לוגו המיישם" className="max-h-16 object-contain" />
+                                                        : <span className="text-xs text-slate-400">עדיין לא הועלה לוגו</span>}
+                                                </div>
+                                                <input type="file" accept="image/*" style={{ display: 'none' }} ref={logoInputRef} onChange={uploadImplementerLogo} />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => logoInputRef.current.click()}
+                                                        className="flex-grow bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2">
+                                                        <Icon name="upload" size={16} /> {brand.logo ? 'החלף לוגו' : 'העלה לוגו'}
+                                                    </button>
+                                                    {brand.logo && (
+                                                        <button onClick={removeImplementerLogo}
+                                                            className="px-4 py-2.5 rounded-xl font-bold text-red-500 bg-white border border-red-200 hover:bg-red-50">הסר</button>
+                                                    )}
+                                                </div>
+                                                {logoError && <p className="text-xs font-bold text-red-600 mt-2">{logoError}</p>}
+                                                <p className="text-[11px] text-blue-700/70 mt-2 leading-relaxed">
+                                                    הלוגו נשמר בדפדפן שלך ונטען אוטומטית בכל כניסה — אין צורך להעלות אותו מחדש. הוא מוצג בראש המסך ובמסמך ה-PDF, ושורד גם איפוס מחירון.
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* NEW: User Packages Setup (Public / Private) */}
-                                    <div className="p-6 bg-white rounded-2xl border shadow-sm">
-                                        <h3 className="font-bold text-xl text-blue-800 border-b pb-3 mb-6">ניהול חבילות רישוי למודולים (Public / Private)</h3>
-                                        
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                            {/* Public Packages */}
-                                            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                                                <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2"><Icon name="globe" size={18}/> חבילות משתמשים - חיבור חיצוני (Public)</h4>
-                                                <div className="space-y-3">
-                                                    {config.publicUserPackages.map((pkg, idx) => (
-                                                        <div key={pkg.id} className="flex gap-2 items-center bg-white p-2 rounded-lg border">
-                                                            <input value={pkg.name} onChange={e => updateConfigValue(['publicUserPackages', idx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded font-bold"/>
-                                                            <input type="number" value={pkg.price} onChange={e => updateConfigValue(['publicUserPackages', idx, 'price'], Number(e.target.value))} className="w-24 p-2 text-sm border rounded font-black"/>
-                                                            <button onClick={() => {
-                                                                const arr = [...config.publicUserPackages];
-                                                                arr.splice(idx, 1);
-                                                                updateConfigValue(['publicUserPackages'], arr);
-                                                            }} className="text-red-400 p-2"><Icon name="x" size={16}/></button>
-                                                        </div>
-                                                    ))}
-                                                    <button onClick={() => addUserPackage('public')} className="text-xs font-bold text-blue-600 bg-white border border-blue-200 px-3 py-1.5 rounded-lg">+ הוסף חבילת Public</button>
-                                                </div>
+                                    {/* הגדרות גלובליות */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">חבילת הבסיס והגדרות אומדן</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">שם חבילת הבסיס</label>
+                                                <input value={config.platformName} onChange={e => updateConfigValue(['platformName'], e.target.value)}
+                                                    className="w-full p-3 border rounded-xl bg-white font-bold" />
                                             </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מחיר פלטפורמה חודשי (₪)</label>
+                                                <input type="number" value={config.platformPrice}
+                                                    onChange={e => updateConfigValue(['platformPrice'], Number(e.target.value))}
+                                                    className="w-full p-3 border rounded-xl bg-white font-black" />
+                                            </div>
+                                        </div>
+                                        <div className="mb-6">
+                                            <label className="text-xs font-bold text-slate-500 mb-1 block">תיאור חבילת הבסיס</label>
+                                            <input value={config.platformDescription}
+                                                onChange={e => updateConfigValue(['platformDescription'], e.target.value)}
+                                                className="w-full p-3 border rounded-xl bg-white" />
+                                        </div>
 
-                                            {/* Private Packages */}
-                                            <div className="bg-slate-100 p-4 rounded-xl border border-slate-200">
-                                                <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Icon name="lock" size={18}/> חבילות משתמשים - פנים ארגוני (Private)</h4>
-                                                <div className="space-y-3">
-                                                    {config.privateUserPackages.map((pkg, idx) => (
-                                                        <div key={pkg.id} className="flex gap-2 items-center bg-white p-2 rounded-lg border">
-                                                            <input value={pkg.name} onChange={e => updateConfigValue(['privateUserPackages', idx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded font-bold"/>
-                                                            <input type="number" value={pkg.price} onChange={e => updateConfigValue(['privateUserPackages', idx, 'price'], Number(e.target.value))} className="w-24 p-2 text-sm border rounded font-black"/>
-                                                            <button onClick={() => {
-                                                                const arr = [...config.privateUserPackages];
-                                                                arr.splice(idx, 1);
-                                                                updateConfigValue(['privateUserPackages'], arr);
-                                                            }} className="text-red-400 p-2"><Icon name="x" size={16}/></button>
-                                                        </div>
-                                                    ))}
-                                                    <button onClick={() => addUserPackage('private')} className="text-xs font-bold text-slate-600 bg-white border border-slate-300 px-3 py-1.5 rounded-lg">+ הוסף חבילת Private</button>
-                                                </div>
+                                        <div className="bg-orange-50 p-5 rounded-2xl border border-orange-200 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div>
+                                                <label className="text-xs font-bold text-orange-700 mb-1 block">תעריף שעת הקמה (₪)</label>
+                                                <input type="number" value={config.setupHourlyRate}
+                                                    onChange={e => updateConfigValue(['setupHourlyRate'], Number(e.target.value))}
+                                                    className="w-full p-3 border border-orange-200 rounded-xl bg-white font-black" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-orange-700 mb-1 block">שעות ביום עבודה (להצגה בלבד)</label>
+                                                <input type="number" value={config.setupHoursPerDay}
+                                                    onChange={e => updateConfigValue(['setupHoursPerDay'], Number(e.target.value))}
+                                                    className="w-full p-3 border border-orange-200 rounded-xl bg-white" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-orange-700 mb-1 block">שער דולר (₪ ל-$1)</label>
+                                                <input type="number" step="0.1" value={config.exchangeRate}
+                                                    onChange={e => updateConfigValue(['exchangeRate'], Number(e.target.value))}
+                                                    className="w-full p-3 border border-orange-200 rounded-xl bg-white" />
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Global Tiers Setup */}
-                                    <div className="p-6 bg-white rounded-2xl border shadow-sm">
-                                        <div className="flex justify-between items-center border-b pb-2 mb-4">
-                                            <h3 className="font-bold text-lg text-slate-800">חבילות טרנזקציות מערכתיות כלליות</h3>
-                                            <label className="flex items-center gap-2 text-sm font-bold bg-slate-50 border px-3 py-1.5 rounded-lg cursor-pointer">
-                                                <input type="checkbox" checked={config.enableGlobalTiers} onChange={e => updateConfigValue(['enableGlobalTiers'], e.target.checked)} className="w-4 h-4 text-blue-600"/> הצג אזור זה במחשבון
-                                            </label>
-                                        </div>
-                                        {config.enableGlobalTiers && (
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת מותאמת אישית</label>
-                                                    <input value={config.uiText.tiersHeader} onChange={e => updateConfigValue(['uiText', 'tiersHeader'], e.target.value)} className="w-1/2 p-3 border rounded-xl bg-slate-50 font-bold mb-4"/>
-                                                </div>
-                                                <div className="space-y-3">
-                                                    {config.globalTiers.map((tier, idx) => (
-                                                        <div key={tier.id} className="flex gap-4 items-end bg-slate-50 p-4 rounded-xl border">
-                                                            <div className="flex-grow">
-                                                                <label className="text-[10px] font-bold text-slate-400">שם החבילה</label>
-                                                                <input value={tier.name} onChange={e => updateConfigValue(['globalTiers', idx, 'name'], e.target.value)} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                    {/* רמות מודול */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-2">רמות מודול</h3>
+                                        <p className="text-xs text-slate-400 mb-6">
+                                            שינוי כאן מתעדכן אוטומטית בכל המודולים באותה רמה. עדיין ניתן לחרוג ידנית במודול בודד ברשימה שמתחת.
+                                        </p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {['basic', 'premium'].map(tier => {
+                                                const isPrem = tier === 'premium';
+                                                return (
+                                                    <div key={tier} className={`p-5 rounded-2xl border ${isPrem ? 'bg-violet-50 border-violet-200' : 'bg-blue-50 border-blue-200'}`}>
+                                                        <input value={config.moduleTiers[tier].label}
+                                                            onChange={e => updateTierDef(tier, 'label', e.target.value)}
+                                                            className={`text-lg font-black bg-white border rounded-xl w-full p-2.5 mb-4 ${isPrem ? 'text-violet-800' : 'text-blue-800'}`} />
+                                                        <div className="grid grid-cols-2 gap-3">
+                                                            <div>
+                                                                <label className="text-[11px] font-bold text-slate-500 mb-1 block">מחיר חודשי (₪)</label>
+                                                                <input type="number" value={config.moduleTiers[tier].price}
+                                                                    onChange={e => updateTierDef(tier, 'price', Number(e.target.value))}
+                                                                    className="w-full p-2.5 border rounded-lg bg-white font-black" />
                                                             </div>
-                                                            <div className="w-32">
-                                                                <label className="text-[10px] font-bold text-slate-400">כמות פעולות</label>
-                                                                <input type="number" value={tier.limit} onChange={e => updateConfigValue(['globalTiers', idx, 'limit'], Number(e.target.value))} className="w-full p-2 border rounded-lg text-sm"/>
-                                                            </div>
-                                                            <div className="w-24">
-                                                                <label className="text-[10px] font-bold text-slate-400">מחיר ($)</label>
-                                                                <input type="number" value={tier.price} onChange={e => updateConfigValue(['globalTiers', idx, 'price'], Number(e.target.value))} className="w-full p-2 border rounded-lg font-bold text-sm"/>
+                                                            <div>
+                                                                <label className="text-[11px] font-bold text-slate-500 mb-1 block">טרנזקציות כלולות</label>
+                                                                <input type="number" value={config.moduleTiers[tier].tx}
+                                                                    onChange={e => updateTierDef(tier, 'tx', Number(e.target.value))}
+                                                                    className="w-full p-2.5 border rounded-lg bg-white font-black" />
                                                             </div>
                                                         </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
+                                                        <div className="text-[11px] font-bold text-slate-500 mt-3">
+                                                            מחיר לטרנזקציה: {config.moduleTiers[tier].tx > 0
+                                                                ? (config.moduleTiers[tier].price / config.moduleTiers[tier].tx).toFixed(3) + ' ₪'
+                                                                : '—'}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
 
-                                    {/* Modules Management With Per-Module Tiers & Notes */}
-                                    <div>
-                                        <h3 className="font-bold text-2xl mb-2 text-slate-800">ניהול מודולים פנימיים ומדרגות עומס</h3>
-                                        <p className="text-sm text-slate-500 mb-6">לכל מודול ניתן להגדיר מדרגות עומס שישפיעו על אומדן העלות החודשי.</p>
-                                        
-                                        <div className="space-y-6">
+                                    {/* ניהול מודולים */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">ניהול מודולים</h3>
+                                        <div className="space-y-4">
                                             {config.modules.map((m, idx) => (
-                                                <div key={m.id} className="bg-white border-2 border-slate-200 p-5 rounded-2xl shadow-sm">
-                                                    
-                                                    {/* Module Header */}
-                                                    <div className="flex flex-wrap md:flex-nowrap gap-4 items-start border-b pb-4 mb-4">
-                                                        <button 
-                                                            onClick={() => setIconPickerOpen(iconPickerOpen === idx ? null : idx)} 
-                                                            className="p-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors relative"
-                                                        >
-                                                            <Icon name={m.icon} size={24}/>
-                                                            {iconPickerOpen === idx && (
-                                                                <div className="absolute top-14 right-0 z-50 bg-white border shadow-2xl rounded-xl p-3 grid grid-cols-5 gap-2 w-64 h-48 overflow-y-auto">
+                                                <div key={m.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                                    <div className="flex flex-wrap gap-3 items-start">
+                                                        <div className="relative">
+                                                            <button onClick={() => setIconPickerOpen(iconPickerOpen === m.id ? null : m.id)}
+                                                                className="p-3 bg-white border rounded-xl text-slate-600 hover:border-blue-400">
+                                                                <Icon name={m.icon} size={22} />
+                                                            </button>
+                                                            {iconPickerOpen === m.id && (
+                                                                <div className="absolute z-30 top-full mt-2 right-0 bg-white border shadow-xl rounded-xl p-2 grid grid-cols-6 gap-1 w-64 max-h-60 overflow-y-auto custom-scroll">
                                                                     {ICON_LIST.map(icon => (
-                                                                        <button key={icon} onClick={(e) => { e.stopPropagation(); updateConfigValue(['modules', idx, 'icon'], icon); setIconPickerOpen(null); }} className="p-2 hover:bg-slate-100 rounded text-slate-700"><Icon name={icon} size={20}/></button>
+                                                                        <button key={icon}
+                                                                            onClick={() => { updateConfigValue(['modules', idx, 'icon'], icon); setIconPickerOpen(null); }}
+                                                                            className="p-2 hover:bg-slate-100 rounded text-slate-700"><Icon name={icon} size={20} /></button>
                                                                     ))}
                                                                 </div>
                                                             )}
-                                                        </button>
-                                                        
-                                                        <div className="flex-grow space-y-3">
-                                                            <div>
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase">שם מודול</label>
-                                                                <input value={m.name} onChange={e => updateConfigValue(['modules', idx, 'name'], e.target.value)} className="w-full p-2 bg-transparent border-b-2 border-slate-200 focus:border-blue-500 outline-none font-black text-lg text-slate-800"/>
-                                                            </div>
-                                                            <div>
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase">הערה / תיאור פנימי (יופיע למיישם וב-PDF)</label>
-                                                                <textarea 
-                                                                    value={m.note || ''} 
-                                                                    onChange={e => updateConfigValue(['modules', idx, 'note'], e.target.value)} 
-                                                                    className="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white outline-none"
-                                                                    placeholder="הזן הערה חופשית..."
-                                                                    rows="2"
-                                                                ></textarea>
-                                                            </div>
                                                         </div>
-                                                        
-                                                        <div className="w-24">
-                                                            <label className="text-[10px] font-bold text-slate-400 uppercase">ימי אפיון והקמה</label>
-                                                            <input type="number" value={m.setupDays} onChange={e => updateConfigValue(['modules', idx, 'setupDays'], Number(e.target.value))} className="w-full p-2 bg-slate-50 border rounded-lg text-center font-bold"/>
-                                                        </div>
-                                                        
-                                                        <div className="flex gap-2">
-                                                            <button onClick={() => duplicateModule(m.id)} className="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded-lg transition-colors" title="שכפל מודול"><Icon name="copy" size={18}/></button>
-                                                            <button onClick={() => {
-                                                                if(window.confirm('למחוק מודול זה?')) {
-                                                                    const newMods = config.modules.filter(x => x.id !== m.id);
-                                                                    updateConfigValue(['modules'], newMods);
-                                                                }
-                                                            }} className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg transition-colors" title="מחק מודול"><Icon name="trash-2" size={18}/></button>
-                                                        </div>
-                                                    </div>
 
-                                                    {/* Module Tiers */}
-                                                    <div className="pl-4 border-r-4 border-blue-200 space-y-3 mr-4">
-                                                        <label className="text-xs font-bold text-blue-800 block mb-2">מדרגות/חבילות עומס למודול זה (MRR):</label>
-                                                        {m.tiers?.map((tier, tIdx) => (
-                                                            <div key={tier.id} className="flex gap-3 items-center bg-slate-50 p-2 rounded-xl border border-slate-200">
-                                                                <input value={tier.name} onChange={e => updateConfigValue(['modules', idx, 'tiers', tIdx, 'name'], e.target.value)} className="flex-grow p-2 text-sm border rounded bg-white" placeholder="שם המדרגה..."/>
-                                                                <div className="relative w-32">
-                                                                    <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-bold">$</span>
-                                                                    <input type="number" value={tier.price} onChange={e => updateConfigValue(['modules', idx, 'tiers', tIdx, 'price'], Number(e.target.value))} className="w-full p-2 pl-6 text-sm border rounded font-black text-slate-700 bg-white"/>
-                                                                </div>
-                                                                <button onClick={() => {
-                                                                    const updatedTiers = [...m.tiers];
-                                                                    updatedTiers.splice(tIdx, 1);
-                                                                    updateConfigValue(['modules', idx, 'tiers'], updatedTiers);
-                                                                }} className="text-red-300 hover:text-red-500 p-2"><Icon name="x" size={16}/></button>
+                                                        <div className="flex-grow min-w-[200px] space-y-2">
+                                                            <input value={m.name} onChange={e => updateConfigValue(['modules', idx, 'name'], e.target.value)}
+                                                                className="w-full p-2.5 border rounded-lg bg-white font-bold" placeholder="שם המודול" />
+                                                            <input value={m.note} onChange={e => updateConfigValue(['modules', idx, 'note'], e.target.value)}
+                                                                className="w-full p-2.5 border rounded-lg bg-white text-sm text-slate-600"
+                                                                placeholder="תיאור המודול (יופיע במסך ובמסמך ה-PDF)" />
+                                                        </div>
+
+                                                        <div className="flex flex-wrap gap-2 items-end">
+                                                            <div>
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">רמה</label>
+                                                                <select value={m.tier} onChange={e => setModuleTier(idx, e.target.value)}
+                                                                    className="p-2.5 border rounded-lg bg-white font-bold text-sm">
+                                                                    <option value="basic">{config.moduleTiers.basic.label}</option>
+                                                                    <option value="premium">{config.moduleTiers.premium.label}</option>
+                                                                </select>
                                                             </div>
-                                                        ))}
-                                                        <button onClick={() => {
-                                                            const updatedTiers = m.tiers ? [...m.tiers] : [];
-                                                            updatedTiers.push({ id: `t_${Date.now()}`, name: 'מדרגה חדשה', price: 100 });
-                                                            updateConfigValue(['modules', idx, 'tiers'], updatedTiers);
-                                                        }} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg mt-2 inline-flex items-center gap-1 hover:bg-blue-100">+ הוסף מדרגה למודול</button>
+                                                            <div>
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">₪ /חודש</label>
+                                                                <input type="number" value={m.price}
+                                                                    onChange={e => updateConfigValue(['modules', idx, 'price'], Number(e.target.value))}
+                                                                    className="w-24 p-2.5 border rounded-lg bg-white font-black text-center" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">טרנזקציות</label>
+                                                                <input type="number" value={m.includedTx}
+                                                                    onChange={e => updateConfigValue(['modules', idx, 'includedTx'], Number(e.target.value))}
+                                                                    className="w-28 p-2.5 border rounded-lg bg-white font-black text-center" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-[10px] font-bold text-orange-500 uppercase block mb-1">שעות הקמה</label>
+                                                                <input type="number" value={m.setupHours}
+                                                                    onChange={e => updateConfigValue(['modules', idx, 'setupHours'], Number(e.target.value))}
+                                                                    className="w-24 p-2.5 border border-orange-200 rounded-lg bg-orange-50 font-black text-center" />
+                                                            </div>
+                                                            <button onClick={() => duplicateModule(m.id)}
+                                                                className="text-blue-500 hover:text-blue-700 bg-blue-50 p-2.5 rounded-lg" title="שכפל מודול">
+                                                                <Icon name="copy" size={18} />
+                                                            </button>
+                                                            <button onClick={() => deleteModule(idx, m.id)}
+                                                                className="text-red-400 hover:text-red-600 bg-red-50 p-2.5 rounded-lg" title="מחק מודול">
+                                                                <Icon name="trash-2" size={18} />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
-                                        
-                                        {/* Add Module */}
-                                        <div className="flex gap-4 bg-slate-100 p-6 rounded-2xl border border-dashed border-slate-300 items-end mt-6">
-                                            <div className="flex-grow">
-                                                <label className="text-xs font-bold text-slate-600 mb-1 block">הקמת מודול פנימי חדש</label>
-                                                <input value={newModule.name} onChange={e => setNewModule({...newModule, name: e.target.value})} className="w-full p-3 border rounded-xl bg-white" placeholder="שם המודול..."/>
+
+                                        {/* הוספת מודול */}
+                                        <div className="flex flex-wrap gap-3 items-end bg-blue-50 p-5 rounded-2xl border border-blue-200 mt-6">
+                                            <div className="flex-grow min-w-[200px]">
+                                                <label className="text-xs font-bold text-blue-800 mb-1 block">שם מודול חדש</label>
+                                                <input value={newModule.name} onChange={e => setNewModule({ ...newModule, name: e.target.value })}
+                                                    className="w-full p-3 border rounded-xl bg-white" placeholder="שם המודול..." />
                                             </div>
-                                            <div className="w-32">
-                                                <label className="text-xs font-bold text-slate-600 mb-1 block">ימי הקמה</label>
-                                                <input type="number" value={newModule.setupDays} onChange={e => setNewModule({...newModule, setupDays: Number(e.target.value)})} className="w-full p-3 border rounded-xl bg-white"/>
+                                            <div>
+                                                <label className="text-xs font-bold text-blue-800 mb-1 block">רמה</label>
+                                                <select value={newModule.tier} onChange={e => setNewModule({ ...newModule, tier: e.target.value })}
+                                                    className="p-3 border rounded-xl bg-white font-bold">
+                                                    <option value="basic">{config.moduleTiers.basic.label}</option>
+                                                    <option value="premium">{config.moduleTiers.premium.label}</option>
+                                                </select>
                                             </div>
-                                            <button onClick={addNewModule} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg">צור מודול</button>
+                                            <div>
+                                                <label className="text-xs font-bold text-blue-800 mb-1 block">שעות הקמה</label>
+                                                <input type="number" value={newModule.setupHours}
+                                                    onChange={e => setNewModule({ ...newModule, setupHours: e.target.value })}
+                                                    className="w-28 p-3 border rounded-xl bg-white text-center font-black" />
+                                            </div>
+                                            <button onClick={addNewModule}
+                                                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg">צור מודול</button>
                                         </div>
                                     </div>
 
-                                    {/* AI Packages */}
-                                    <div className="pt-8 border-t">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-bold text-xl text-violet-700">שילוב יכולות AI</h3>
-                                            <label className="flex items-center gap-2 text-sm font-bold bg-slate-50 border px-3 py-1.5 rounded-lg cursor-pointer">
-                                                <input type="checkbox" checked={config.enableAI} onChange={e => updateConfigValue(['enableAI'], e.target.checked)} className="w-4 h-4 text-violet-600"/> הצג אזור זה במחשבון
-                                            </label>
+                                    {/* טרנזקציות ומשתמשים */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                            <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">חבילת טרנזקציות נוספת</h3>
+                                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                                <div>
+                                                    <label className="text-[11px] font-bold text-slate-500 mb-1 block">טרנזקציות בחבילה</label>
+                                                    <input type="number" value={config.extraTxPack.tx}
+                                                        onChange={e => updateConfigValue(['extraTxPack', 'tx'], Number(e.target.value))}
+                                                        className="w-full p-3 border rounded-xl bg-white font-black" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[11px] font-bold text-slate-500 mb-1 block">מחיר החבילה (₪)</label>
+                                                    <input type="number" value={config.extraTxPack.price}
+                                                        onChange={e => updateConfigValue(['extraTxPack', 'price'], Number(e.target.value))}
+                                                        className="w-full p-3 border rounded-xl bg-white font-black" />
+                                                </div>
+                                            </div>
+                                            <div className="text-xs font-bold text-slate-500 bg-slate-50 p-3 rounded-xl mb-4">
+                                                מחיר לטרנזקציה: {config.extraTxPack.tx > 0
+                                                    ? (config.extraTxPack.price / config.extraTxPack.tx).toFixed(3) + ' ₪'
+                                                    : '—'}
+                                            </div>
+                                            <label className="text-[11px] font-bold text-slate-500 mb-1 block">תחנות מהירות (מספר חבילות, מופרד בפסיקים)</label>
+                                            <input value={config.txStations.join(', ')}
+                                                onChange={e => updateConfigValue(['txStations'],
+                                                    e.target.value.split(',').map(v => Math.max(0, parseInt(v, 10) || 0)))}
+                                                className="w-full p-3 border rounded-xl bg-white font-bold" />
                                         </div>
-                                        
-                                        {config.enableAI && (
+
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                            <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">משתמשים</h3>
                                             <div className="space-y-3">
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">כותרת מותאמת אישית</label>
-                                                    <input value={config.uiText.aiHeader} onChange={e => updateConfigValue(['uiText', 'aiHeader'], e.target.value)} className="w-1/2 p-3 border rounded-xl bg-slate-50 font-bold mb-4"/>
+                                                    <label className="text-[11px] font-bold text-slate-500 mb-1 block">משתמשים כלולים בחבילה</label>
+                                                    <input type="number" value={config.users.included}
+                                                        onChange={e => updateConfigValue(['users', 'included'], Number(e.target.value))}
+                                                        className="w-full p-3 border rounded-xl bg-white font-black" />
                                                 </div>
-                                                {config.aiPackages.map((pkg, idx) => (
-                                                    <div key={pkg.id} className="flex flex-wrap md:flex-nowrap gap-4 items-center bg-white p-4 rounded-xl border shadow-sm">
-                                                        <input value={pkg.name} onChange={e => updateConfigValue(['aiPackages', idx, 'name'], e.target.value)} className="w-full md:w-1/4 p-2 border rounded-lg font-bold text-sm" placeholder="שם חבילה"/>
-                                                        <input value={pkg.description} onChange={e => updateConfigValue(['aiPackages', idx, 'description'], e.target.value)} className="w-full md:flex-grow p-2 border rounded-lg text-sm" placeholder="תיאור"/>
-                                                        <input type="number" value={pkg.price} onChange={e => updateConfigValue(['aiPackages', idx, 'price'], Number(e.target.value))} className="w-24 p-2 border rounded-lg font-bold text-sm text-center" placeholder="$"/>
-                                                        <label className="flex items-center gap-2 text-xs font-bold cursor-pointer bg-slate-50 px-3 py-2 rounded-lg border">
-                                                            <input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['aiPackages', idx, 'isOneTime'], e.target.checked)} className="w-4 h-4"/> חיוב חד-פעמי
-                                                        </label>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-[11px] font-bold text-slate-500 mb-1 block">משתמשים בחבילה נוספת</label>
+                                                        <input type="number" value={config.users.packSize}
+                                                            onChange={e => updateConfigValue(['users', 'packSize'], Number(e.target.value))}
+                                                            className="w-full p-3 border rounded-xl bg-white font-black" />
                                                     </div>
-                                                ))}
+                                                    <div>
+                                                        <label className="text-[11px] font-bold text-slate-500 mb-1 block">מחיר החבילה (₪)</label>
+                                                        <input type="number" value={config.users.packPrice}
+                                                            onChange={e => updateConfigValue(['users', 'packPrice'], Number(e.target.value))}
+                                                            className="w-full p-3 border rounded-xl bg-white font-black" />
+                                                    </div>
+                                                </div>
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
 
-                                    {/* Custom Sections */}
-                                    <div className="pt-8 border-t">
-                                        <h3 className="font-bold text-xl mb-6 text-slate-800">אזורי אומדן נוספים (שרתים, תמיכה וכו')</h3>
-                                        {config.customSections.map((sec, sIdx) => (
-                                            <div key={sec.id} className="mb-8 bg-slate-50 p-6 rounded-3xl border border-slate-200 relative group">
-                                                <button onClick={() => {
-                                                    const newSecs = [...config.customSections];
-                                                    newSecs.splice(sIdx, 1);
-                                                    updateConfigValue(['customSections'], newSecs);
-                                                }} className="absolute top-6 left-6 text-red-400 hover:text-red-600 bg-white p-2 rounded-lg shadow-sm border transition-opacity"><Icon name="trash-2" size={18}/></button>
-                                                
-                                                <div className="mb-6 w-3/4">
-                                                    <label className="text-xs font-bold text-slate-500 block mb-1">כותרת האזור</label>
-                                                    <input value={sec.title} onChange={e => updateConfigValue(['customSections', sIdx, 'title'], e.target.value)} className="text-2xl font-black bg-white border border-slate-200 rounded-xl w-full p-3 outline-none focus:border-blue-500 focus:ring-2 ring-blue-100"/>
+                                    {/* כותרות ממשק */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">כותרות הרכיבים בממשק</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {[['modulesHeader', 'רכיב המודולים'], ['setupHeader', 'רכיב ההקמה'],
+                                              ['txHeader', 'רכיב הטרנזקציות'], ['usersHeader', 'רכיב המשתמשים']].map(([key, label]) => (
+                                                <div key={key}>
+                                                    <label className="text-[11px] font-bold text-slate-500 mb-1 block">{label}</label>
+                                                    <input value={config.uiText[key]}
+                                                        onChange={e => updateConfigValue(['uiText', key], e.target.value)}
+                                                        className="w-full p-3 border rounded-xl bg-white font-bold" />
                                                 </div>
-                                                
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* אזורים מותאמים אישית */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">אזורי אומדן נוספים (שרתים, תמיכה, הדרכה...)</h3>
+                                        {config.customSections.map((sec, sIdx) => (
+                                            <div key={sec.id} className="mb-6 bg-slate-50 p-5 rounded-2xl border border-slate-200 relative">
+                                                <button onClick={() => {
+                                                    const next = [...config.customSections];
+                                                    next.splice(sIdx, 1);
+                                                    updateConfigValue(['customSections'], next);
+                                                }} className="absolute top-5 left-5 text-red-400 hover:text-red-600 bg-white p-2 rounded-lg shadow-sm border">
+                                                    <Icon name="trash-2" size={18} />
+                                                </button>
+                                                <div className="mb-5 w-3/4">
+                                                    <label className="text-xs font-bold text-slate-500 block mb-1">כותרת האזור</label>
+                                                    <input value={sec.title}
+                                                        onChange={e => updateConfigValue(['customSections', sIdx, 'title'], e.target.value)}
+                                                        className="text-xl font-black bg-white border rounded-xl w-full p-3" />
+                                                </div>
                                                 <div className="space-y-3 bg-white p-4 rounded-2xl border">
-                                                    <label className="text-xs font-bold text-slate-500 block mb-2">אפשרויות אומדן בתוך האזור:</label>
+                                                    <label className="text-xs font-bold text-slate-500 block mb-2">אפשרויות בחירה באזור:</label>
                                                     {sec.packages.map((pkg, pIdx) => (
                                                         <div key={pkg.id} className="flex flex-wrap md:flex-nowrap gap-3 items-center bg-slate-50 p-2 rounded-xl border">
-                                                            <input value={pkg.name} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'name'], e.target.value)} className="flex-grow p-2 border rounded-lg text-sm font-bold" placeholder="שם האופציה"/>
-                                                            <div className="relative">
-                                                                <span className="absolute left-3 top-2.5 text-slate-400 text-xs">$</span>
-                                                                <input type="number" value={pkg.price} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'price'], Number(e.target.value))} className="w-24 p-2 pl-6 border rounded-lg text-sm font-black"/>
-                                                            </div>
-                                                            <label className="flex items-center gap-1 text-xs bg-white px-3 py-2 rounded-lg border font-bold cursor-pointer"><input type="checkbox" checked={pkg.isOneTime} onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'isOneTime'], e.target.checked)}/> חיוב חד-פעמי</label>
+                                                            <input value={pkg.name}
+                                                                onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'name'], e.target.value)}
+                                                                className="flex-grow p-2 border rounded-lg text-sm font-bold" placeholder="שם האופציה" />
+                                                            <input type="number" value={pkg.price}
+                                                                onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'price'], Number(e.target.value))}
+                                                                className="w-28 p-2 border rounded-lg text-sm font-black text-center" placeholder="₪" />
+                                                            <label className="flex items-center gap-1 text-xs bg-white px-3 py-2 rounded-lg border font-bold cursor-pointer whitespace-nowrap">
+                                                                <input type="checkbox" checked={!!pkg.isOneTime}
+                                                                    onChange={e => updateConfigValue(['customSections', sIdx, 'packages', pIdx, 'isOneTime'], e.target.checked)} /> חד-פעמי
+                                                            </label>
                                                             <button onClick={() => {
-                                                                const newSecs = [...config.customSections];
-                                                                newSecs[sIdx].packages.splice(pIdx, 1);
-                                                                updateConfigValue(['customSections'], newSecs);
-                                                            }} className="text-red-300 hover:text-red-500 p-2"><Icon name="x" size={18}/></button>
+                                                                const next = [...config.customSections];
+                                                                next[sIdx].packages.splice(pIdx, 1);
+                                                                updateConfigValue(['customSections'], next);
+                                                            }} className="text-red-300 hover:text-red-500 p-2"><Icon name="x" size={18} /></button>
                                                         </div>
                                                     ))}
                                                     <button onClick={() => {
-                                                        const newSecs = [...config.customSections];
-                                                        newSecs[sIdx].packages.push({ id: Date.now(), name: 'אופציה חדשה', price: 0, isOneTime: false });
-                                                        updateConfigValue(['customSections'], newSecs);
-                                                    }} className="text-sm font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-lg mt-2 inline-flex items-center gap-1">+ הוסף אופציית בחירה</button>
+                                                        const next = [...config.customSections];
+                                                        next[sIdx].packages.push({ id: 'pkg_' + Date.now(), name: 'אופציה חדשה', price: 0, isOneTime: false });
+                                                        updateConfigValue(['customSections'], next);
+                                                    }} className="text-sm font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-lg mt-2 inline-flex items-center gap-1">+ הוסף אופציה</button>
                                                 </div>
                                             </div>
                                         ))}
-                                        
-                                        <div className="flex gap-4 bg-blue-50 p-6 rounded-3xl border border-blue-200 items-center mt-6">
-                                            <div className="flex-grow">
-                                                <label className="text-xs font-bold text-blue-800 mb-1 block">יצירת קטגוריית אומדן חדשה</label>
-                                                <input value={newSectionTitle} onChange={e => setNewSectionTitle(e.target.value)} placeholder="למשל: סביבות ענן / שרתים..." className="w-full p-3 border rounded-xl bg-white font-bold"/>
+                                        <div className="flex flex-wrap gap-4 bg-blue-50 p-5 rounded-2xl border border-blue-200 items-end">
+                                            <div className="flex-grow min-w-[200px]">
+                                                <label className="text-xs font-bold text-blue-800 mb-1 block">יצירת אזור אומדן חדש</label>
+                                                <input value={newSectionTitle} onChange={e => setNewSectionTitle(e.target.value)}
+                                                    placeholder="למשל: סביבות ענן / שרתים..." className="w-full p-3 border rounded-xl bg-white font-bold" />
                                             </div>
-                                            <button onClick={addNewSection} className="bg-blue-700 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-800 shadow-lg mt-5">הקם אזור</button>
+                                            <button onClick={addNewSection}
+                                                className="bg-blue-700 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-800 shadow-lg">הקם אזור</button>
                                         </div>
                                     </div>
+
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* --- אזור הדפסה מיוחד לצרכים פנימיים (PDF) --- */}
+                    {/* --- אזור הדפסה (PDF) --- */}
                     <div id="print-area">
                         <div className="print-container">
-                            
+
                             {/* כותרת ולוגואים */}
                             <div className="avoid-break" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #2563eb', paddingBottom: '20px', marginBottom: '30px' }}>
                                 <div>
-                                    <img src="oneflowlogo.png" alt="ONEFLOW 360 PRO" style={{ height: '45px', marginBottom: '15px' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
-                                    <h1 style={{ display: 'none' }}>אומדן עלויות פרויקט: ONEFLOW 360 PRO</h1>
+                                    <BrandLogo src={config.brandLogo} style={{ height: '45px', marginBottom: '15px', objectFit: 'contain' }} />
                                     <div className="print-sub-header">
-                                        <p><strong>לקוח / פרויקט:</strong> {clientName || "לא צוין"}</p>
-                                        <p><strong>מיישם עורך האומדן:</strong> {implementerName || "לא צוין"}</p>
+                                        <p><strong>לקוח / פרויקט:</strong> {clientName || 'לא צוין'}</p>
+                                        <p><strong>מיישם עורך האומדן:</strong> {brand.name || 'לא צוין'}</p>
                                         <p><strong>תאריך הפקה:</strong> {new Date(quoteDate).toLocaleDateString('he-IL')}</p>
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'left' }}>
-                                    <img src="onebtnlogo.png" alt="ONEBTN" style={{ height: '40px', marginBottom: '5px' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
-                                    <h2 style={{ display: 'none', margin: 0, fontSize: '22pt', color: '#2563eb', border: 'none' }}>ONEBTN</h2>
+                                    {brand.logo
+                                        ? <img src={brand.logo} alt="לוגו המיישם" style={{ height: '45px', marginBottom: '5px', objectFit: 'contain' }} />
+                                        : <img src="onebtnlogo.png" alt="ONEBTN" style={{ height: '40px', marginBottom: '5px', objectFit: 'contain' }} />}
                                     <p style={{ fontSize: '10pt', letterSpacing: '1px', textTransform: 'uppercase', color: '#64748b' }}>Digital Backbone Solutions</p>
                                 </div>
                             </div>
 
                             <div className="avoid-break">
-                                <h2>1. אומדן מודולים ותכולת הפרויקט המרכזית</h2>
-                                <table className="print-table">
+                                <h2>1. מודולים נבחרים ותכולת הפרויקט</h2>
+                                <table>
                                     <thead>
                                         <tr>
-                                            <th style={{width:'30%'}}>מודול נדרש</th>
-                                            <th style={{width:'15%', textAlign:'center'}}>תצורת גישה</th>
-                                            <th style={{width:'20%'}}>היקף משתמשים מורשים</th>
-                                            <th style={{width:'20%'}}>מדרגת עומס / פעילות</th>
-                                            <th style={{textAlign:'center'}}>אומדן ימים</th>
-                                            <th style={{textAlign:'center'}}>סה"כ חודשי ($)</th>
+                                            <th style={{ width: '32%' }}>מודול</th>
+                                            <th style={{ width: '12%', textAlign: 'center' }}>רמה</th>
+                                            <th style={{ width: '18%', textAlign: 'center' }}>טרנזקציות כלולות</th>
+                                            <th style={{ width: '13%', textAlign: 'center' }}>שעות הקמה</th>
+                                            <th style={{ textAlign: 'center' }}>חודשי (₪)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {totals.selectedModulesDetails.map(m => (
+                                        {totals.details.map(m => (
                                             <tr key={m.id}>
                                                 <td>
-                                                    <div style={{fontWeight:'bold', fontSize:'11pt', color:'#1e293b'}}>{m.name}</div>
-                                                    {m.note && <div style={{fontSize:'9pt', color:'#64748b', marginTop:'4px'}}>{m.note}</div>}
+                                                    <div style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1e293b' }}>{m.name}</div>
+                                                    {m.note && <div style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>{m.note}</div>}
                                                 </td>
-                                                <td style={{textAlign:'center'}}>
-                                                    <span className={`badge ${m.accessType === 'public' ? 'badge-public' : 'badge-private'}`}>
-                                                        {m.accessType === 'public' ? 'חיצוני (Public)' : 'פנימי (Private)'}
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <span className={'badge ' + (m.tier === 'premium' ? 'badge-premium' : 'badge-basic')}>
+                                                        {m.tier === 'premium' ? config.moduleTiers.premium.label : config.moduleTiers.basic.label}
                                                     </span>
                                                 </td>
-                                                <td>{m.selectedUserPkgName}</td>
-                                                <td>{m.selectedTierName}</td>
-                                                <td style={{textAlign:'center', fontWeight:'bold', color:'#ea580c'}}>{m.setupDays}</td>
-                                                <td style={{textAlign:'center', fontWeight:'bold', fontSize:'11pt'}}>${m.monthlyPrice.toLocaleString()}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{fmt(m.includedTx)}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#ea580c' }}>{fmt(m.hours)}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '11pt' }}>{money(m.price)}</td>
                                             </tr>
                                         ))}
-                                        <tr style={{backgroundColor:'#f1f5f9', borderTop:'2px solid #cbd5e1'}}>
-                                            <td colSpan="4" style={{fontWeight:'bold', fontSize:'11pt'}}>סה"כ לתשתית מודולים:</td>
-                                            <td style={{textAlign:'center', fontWeight:'bold', color:'#c2410c'}}>{totals.totalSetupDays} ימים</td>
-                                            <td style={{textAlign:'center', fontWeight:'bold', color:'#1e3a8a', fontSize:'12pt'}}>${totals.modulesMRR.toLocaleString()}</td>
+                                        <tr style={{ backgroundColor: '#f1f5f9', borderTop: '2px solid #cbd5e1' }}>
+                                            <td colSpan="2" style={{ fontWeight: 'bold', fontSize: '11pt' }}>סה"כ מודולים:</td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{fmt(totals.includedTx)}</td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#c2410c' }}>{fmt(totals.setupHours)}</td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#1e3a8a', fontSize: '12pt' }}>{money(totals.modulesMRR)}</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
 
-                            {/* נציג את טבלת התוספות רק אם יש משהו להציג בתוכה */}
-                            {(config.enableGlobalTiers || (config.enableAI && totals.aiObj.price > 0) || totals.customItems.length > 0) && (
-                                <div className="avoid-break">
-                                    <h2>2. שירותים גלובליים ותוספות מערכת</h2>
-                                    <table className="print-table">
-                                        <thead>
-                                            <tr>
-                                                <th>רכיב / שירות משלים</th>
-                                                <th>פירוט היקף</th>
-                                                <th style={{textAlign:'center', width:'100px'}}>סוג אומדן</th>
-                                                <th style={{textAlign:'center', width:'100px'}}>עלות ($)</th>
+                            <div className="avoid-break">
+                                <h2>2. חבילת הבסיס, טרנזקציות ומשתמשים</h2>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>רכיב</th>
+                                            <th>פירוט היקף</th>
+                                            <th style={{ textAlign: 'center', width: '110px' }}>סוג חיוב</th>
+                                            <th style={{ textAlign: 'center', width: '110px' }}>עלות (₪)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td style={{ fontWeight: 'bold' }}>{config.platformName}</td>
+                                            <td>{config.platformDescription}</td>
+                                            <td style={{ textAlign: 'center' }}><span className="badge">חודשי</span></td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{money(totals.platformPrice)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ fontWeight: 'bold' }}>תוספת חבילות טרנזקציות</td>
+                                            <td>
+                                                {extraTxPacks} חבילות × {fmt(totals.packTx)} = {fmt(totals.extraTx)} טרנזקציות
+                                                <div style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>
+                                                    סה"כ מכסה חודשית כולל המודולים: {fmt(totals.totalTx)} טרנזקציות
+                                                </div>
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}><span className="badge">חודשי</span></td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{money(totals.extraTxCost)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ fontWeight: 'bold' }}>משתמשי מערכת</td>
+                                            <td>
+                                                {fmt(totals.usersIncluded)} כלולים
+                                                {extraUserPacks > 0 && ' + ' + extraUserPacks + ' חבילות × ' + fmt(totals.userPackSize)}
+                                                <div style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>
+                                                    סה"כ {fmt(totals.totalUsers)} משתמשים
+                                                </div>
+                                            </td>
+                                            <td style={{ textAlign: 'center' }}><span className="badge">חודשי</span></td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{money(totals.extraUsersCost)}</td>
+                                        </tr>
+                                        {totals.customItems.map((item, idx) => (
+                                            <tr key={idx}>
+                                                <td style={{ fontWeight: 'bold' }}>{item.sectionTitle}: {item.name}</td>
+                                                <td>{item.description || 'ללא פירוט נוסף'}</td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <span className="badge" style={{ backgroundColor: item.isOneTime ? '#fff7ed' : '#eff6ff', color: item.isOneTime ? '#c2410c' : '#1e40af' }}>
+                                                        {item.isOneTime ? 'חד-פעמי' : 'חודשי'}
+                                                    </span>
+                                                </td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{money(item.price)}</td>
                                             </tr>
-                                        </thead>
-                                        <tbody>
-                                            {config.enableGlobalTiers && (
-                                                <tr>
-                                                    <td style={{fontWeight:'bold'}}>חבילת טרנזקציות ומסמכים גלובלית</td>
-                                                    <td>{totals.globalTierObj.name} (עד {totals.globalTierObj.limit.toLocaleString()})</td>
-                                                    <td style={{textAlign:'center'}}><span className="badge">חודשי (MRR)</span></td>
-                                                    <td style={{textAlign:'center', fontWeight:'bold'}}>${totals.globalTierObj.price.toLocaleString()}</td>
-                                                </tr>
-                                            )}
-                                            {/* AI Row */}
-                                            {config.enableAI && totals.aiObj.price > 0 && (
-                                                <tr>
-                                                    <td style={{fontWeight:'bold', color:'#7c3aed'}}>יכולות AI: {totals.aiObj.name}</td>
-                                                    <td>{totals.aiObj.description}</td>
-                                                    <td style={{textAlign:'center'}}>
-                                                        <span className="badge" style={{backgroundColor: totals.aiObj.isOneTime ? '#fff7ed' : '#eff6ff', color: totals.aiObj.isOneTime ? '#c2410c' : '#1e40af'}}>
-                                                            {totals.aiObj.isOneTime ? 'חד-פעמי' : 'חודשי'}
-                                                        </span>
-                                                    </td>
-                                                    <td style={{textAlign:'center', fontWeight:'bold'}}>${totals.aiObj.price.toLocaleString()}</td>
-                                                </tr>
-                                            )}
-                                            {/* Custom Rows */}
-                                            {totals.customItems.map((item, idx) => (
-                                                <tr key={idx}>
-                                                    <td style={{fontWeight:'bold'}}>{item.sectionTitle}: {item.name}</td>
-                                                    <td>{item.description || 'ללא פירוט נוסף'}</td>
-                                                    <td style={{textAlign:'center'}}>
-                                                        <span className="badge" style={{backgroundColor: item.isOneTime ? '#fff7ed' : '#eff6ff', color: item.isOneTime ? '#c2410c' : '#1e40af'}}>
-                                                            {item.isOneTime ? 'חד-פעמי' : 'חודשי'}
-                                                        </span>
-                                                    </td>
-                                                    <td style={{textAlign:'center', fontWeight:'bold'}}>${item.price.toLocaleString()}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
 
                             <div className="summary-box avoid-break">
-                                <h3 style={{marginTop:0, borderBottom:'none', fontSize:'18pt', color:'#1e3a8a'}}>סיכום אומדן כולל לפרויקט</h3>
-                                
-                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'20px'}}>
-                                    <div style={{fontSize:'14pt', fontWeight:'bold'}}>סה"כ אומדן חיוב חודשי קבוע (MRR):</div>
-                                    <div style={{textAlign:'left'}}>
-                                        <div style={{fontSize:'24pt', fontWeight:'900', color:'#1e3a8a', lineHeight:1}}>${totals.totalMRR.toLocaleString()}</div>
-                                        <div style={{fontSize:'11pt', color:'#64748b', marginTop:'5px'}}>≈ {Math.round(totals.nisMRR).toLocaleString()} ₪</div>
+                                <h3 style={{ marginTop: 0, borderBottom: 'none', fontSize: '18pt', color: '#1e3a8a' }}>סיכום אומדן כולל לפרויקט</h3>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
+                                    <div>
+                                        <div style={{ fontSize: '14pt', fontWeight: 'bold' }}>סה"כ חיוב חודשי קבוע (MRR):</div>
+                                        <div style={{ fontSize: '10pt', color: '#64748b', marginTop: '5px' }}>
+                                            {fmt(totals.totalTx)} טרנזקציות · {fmt(totals.totalUsers)} משתמשים · {totals.details.length} מודולים
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <div style={{ fontSize: '24pt', fontWeight: '900', color: '#1e3a8a', lineHeight: 1 }}>{money(totals.totalMRR)}</div>
+                                        <div style={{ fontSize: '11pt', color: '#64748b', marginTop: '5px' }}>{usd(totals.totalMRR, config.exchangeRate)}</div>
                                     </div>
                                 </div>
 
-                                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', paddingTop:'20px', borderTop:'2px dashed #cbd5e1'}}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '20px', borderTop: '2px dashed #cbd5e1' }}>
                                     <div>
-                                        <div style={{fontSize:'14pt', fontWeight:'bold', color:'#c2410c'}}>סה"כ אומדן עלות הקמה ופיתוח חד-פעמית (Setup):</div>
-                                        <div style={{fontSize:'11pt', color:'#ea580c', marginTop:'5px'}}>נגזר משעות עבודה מוערכות: ({totals.totalSetupDays} ימי עבודה של מיישם/מפתח)</div>
+                                        <div style={{ fontSize: '14pt', fontWeight: 'bold', color: '#c2410c' }}>סה"כ עלות הקמה חד-פעמית (Setup):</div>
+                                        <div style={{ fontSize: '11pt', color: '#ea580c', marginTop: '5px' }}>
+                                            {fmt(totals.setupHours)} שעות × {money(config.setupHourlyRate)} לשעה (≈ {totals.setupDays.toFixed(1)} ימי עבודה)
+                                        </div>
                                     </div>
-                                    <div style={{textAlign:'left'}}>
-                                        <div style={{fontSize:'24pt', fontWeight:'900', color:'#c2410c', lineHeight:1}}>${totals.totalSetup.toLocaleString()}</div>
-                                        <div style={{fontSize:'11pt', color:'#9a3412', marginTop:'5px'}}>≈ {Math.round(totals.nisSetup).toLocaleString()} ₪</div>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <div style={{ fontSize: '24pt', fontWeight: '900', color: '#c2410c', lineHeight: 1 }}>{money(totals.totalSetup)}</div>
+                                        <div style={{ fontSize: '11pt', color: '#9a3412', marginTop: '5px' }}>{usd(totals.totalSetup, config.exchangeRate)}</div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="avoid-break" style={{marginTop:'50px', textAlign:'center', fontSize:'10pt', color:'#64748b', borderTop:'1px solid #e2e8f0', paddingTop:'20px'}}>
-                                <p style={{fontWeight:'bold', color:'#ef4444', fontSize:'12pt'}}>מסמך אומדן זה מיועד לשימוש פנימי בלבד לשם הערכת עלויות טרם הפקת הצעת מחיר רשמית.</p>
-                                <p className="mt-2">המחירים אינם כוללים מע"מ | מחושב לפי שער המרה פנימי של: {config.exchangeRate} ₪</p>
-                                <p style={{fontWeight:'bold', marginTop:'10px', color:'#1e293b'}}>ONEFLOW PRO ERP Hybrid Infrastructure - Internal Pricing Tool</p>
+                            <div className="avoid-break" style={{ marginTop: '50px', textAlign: 'center', fontSize: '10pt', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                                <p style={{ fontWeight: 'bold', color: '#ef4444', fontSize: '12pt' }}>
+                                    מסמך אומדן זה מיועד לשימוש פנימי בלבד לשם הערכת עלויות טרם הפקת הצעת מחיר רשמית.
+                                </p>
+                                <p style={{ marginTop: '8px' }}>המחירים אינם כוללים מע"מ | שער המרה פנימי: {config.exchangeRate} ₪ ל-$1</p>
+                                <p style={{ fontWeight: 'bold', marginTop: '10px', color: '#1e293b' }}>
+                                    {config.platformName} — Internal Pricing Tool
+                                </p>
                             </div>
                         </div>
                     </div>

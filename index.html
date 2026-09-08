@@ -122,8 +122,21 @@
         ];
 
         // מפתחות אחסון בדפדפן
-        const OFFICIAL_URL = 'pricing.json';               // המחירון המרכזי, מתפרסם עם האתר
-        const STORAGE_KEY = 'oneflow_tx_override_v1';      // עקיפה מקומית של המחירון (אם קיימת)
+        const OFFICIAL_URL = 'pricing.json';               // המחירון הרשמי, ברירת המחדל לכולם
+
+        // מזהה מיישם מהקישור האישי:  index.html?p=moshe  ->  pricing-moshe.json
+        // מסונן לתווים בטוחים בלבד, כדי שלא ניתן יהיה להצביע דרכו על קובץ אחר.
+        const readPartnerId = () => {
+            try {
+                const raw = new URLSearchParams(window.location.search).get('p') || '';
+                return raw.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40);
+            } catch { return ''; }
+        };
+        const PARTNER_ID    = readPartnerId();
+        const PRICEBOOK_URL = PARTNER_ID ? 'pricing-' + PARTNER_ID + '.json' : OFFICIAL_URL;
+
+        // העקיפה המקומית נשמרת בנפרד לכל מחירון, כדי ששינוי בקישור אחד לא ידלוף לאחר
+        const STORAGE_KEY = 'oneflow_tx_override_v1' + (PARTNER_ID ? '::' + PARTNER_ID : '');
         const LEGACY_KEY  = 'oneflow_tx_config_v1';        // מפתח מגרסה שבה המחירון היה מקומי בלבד
 
         // השוואת מחירונים תוך התעלמות משדות שאינם חלק מהתמחור
@@ -335,26 +348,67 @@
 
             useEffect(() => {
                 let alive = true;
-                fetch(OFFICIAL_URL + '?t=' + Date.now(), { cache: 'no-store' })
-                    .then(r => r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)))
-                    .then(json => {
-                        if (!alive) return;
-                        const off = migrateConfig(json);
-                        setOfficial(off);
-                        setSourceState('official');
-                        adoptLegacy(off);
-                    })
+                const get = (url) => fetch(url + '?t=' + Date.now(), { cache: 'no-store' })
+                    .then(r => r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)));
+
+                const apply = (json, state) => {
+                    if (!alive) return;
+                    const off = migrateConfig(json);
+                    setOfficial(off);
+                    setSourceState(state);
+                    if (!PARTNER_ID) adoptLegacy(off);
+                };
+                const giveUp = () => {
+                    if (!alive) return;
+                    setOfficial(DEFAULT_CONFIG);
+                    setSourceState('fallback');
+                    if (!PARTNER_ID) adoptLegacy(DEFAULT_CONFIG);
+                };
+
+                get(PRICEBOOK_URL)
+                    .then(j => apply(j, PARTNER_ID ? 'partner' : 'official'))
                     .catch(() => {
-                        if (!alive) return;
-                        setOfficial(DEFAULT_CONFIG);
-                        setSourceState('fallback');
-                        adoptLegacy(DEFAULT_CONFIG);
+                        // קישור אישי שקובץ המחירון שלו חסר - נופלים למחירון הרשמי ומסמנים זאת
+                        if (!PARTNER_ID) return giveUp();
+                        get(OFFICIAL_URL).then(j => apply(j, 'partner-missing')).catch(giveUp);
                     });
                 return () => { alive = false; };
             }, []);
 
+            // שם המיישם מגיע מהמחירון האישי, אלא אם המיישם כבר הזין שם משלו
+            useEffect(() => {
+                if (official && official.implementerName) {
+                    setBrand(prev => prev.name ? prev : { ...prev, name: official.implementerName });
+                }
+            }, [official]);
+
             const config = override || official || DEFAULT_CONFIG;
             const isOverridden = !!override;
+
+            const pricebookLabel = (official && (official.label || official.implementerName)) || '';
+            const pricebookState = (() => {
+                if (isOverridden) return {
+                    chipText: 'מחירון מקומי', icon: 'unlock', chipClass: 'bg-amber-100 text-amber-800',
+                    title: 'המחירון שונה בדפדפן הזה בלבד. השינויים אינם מגיעים לאף אחד אחר.'
+                };
+                if (sourceState === 'partner') return {
+                    chipText: pricebookLabel || ('מחירון ' + PARTNER_ID), icon: 'check-circle-2',
+                    chipClass: 'bg-blue-100 text-blue-700',
+                    title: 'המחירון האישי שלך, נטען מהקובץ ' + PRICEBOOK_URL
+                };
+                if (sourceState === 'partner-missing') return {
+                    chipText: 'מחירון אישי לא נמצא', icon: 'shield', chipClass: 'bg-red-100 text-red-700',
+                    title: 'הקובץ ' + PRICEBOOK_URL + ' לא נמצא. מוצג המחירון הרשמי במקומו.'
+                };
+                if (sourceState === 'fallback') return {
+                    chipText: 'מחירון ברירת מחדל', icon: 'shield', chipClass: 'bg-red-100 text-red-700',
+                    title: 'לא נטען קובץ מחירון. מוצג המחירון המובנה בקוד.'
+                };
+                return {
+                    chipText: 'מחירון רשמי', icon: 'check-circle-2', chipClass: 'bg-emerald-100 text-emerald-700',
+                    title: 'המחירון הרשמי, ברירת המחדל לכל מי שנכנס בלי קישור אישי.'
+                };
+            })();
             const officialStamp = (official && official.publishedAt) || null;
             // המחירון הרשמי התעדכן מאז שנוצרה העקיפה המקומית
             const officialChanged = isOverridden && !!officialStamp && override._basedOn !== officialStamp;
@@ -606,7 +660,7 @@
 
             const revertToOfficial = () => {
                 if (!isOverridden) return;
-                if (window.confirm('לבטל את כל השינויים המקומיים ולחזור למחירון הרשמי?\nהלוגו והשם שלך יישמרו.')) {
+                if (window.confirm('לבטל את כל השינויים המקומיים ולחזור למחירון שנטען מהקישור?\nהלוגו והשם שלך יישמרו.')) {
                     setOverride(null);
                     try { localStorage.removeItem(STORAGE_KEY); } catch {}
                 }
@@ -619,7 +673,7 @@
                 const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(out, null, 2));
                 const a = document.createElement('a');
                 a.setAttribute('href', dataStr);
-                a.setAttribute('download', 'pricing.json');
+                a.setAttribute('download', PRICEBOOK_URL);
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
@@ -741,18 +795,10 @@
                                 </>
                             )}
                             <span className="text-sm font-medium text-slate-400 border-r-2 border-slate-200 pr-4 hidden xl:block">מחשבון אומדן פרויקטים למיישם</span>
-                            <span
-                                title={isOverridden
-                                    ? 'המחירון שונה במחשב הזה. השינויים אינם מוצגים למיישמים אחרים.'
-                                    : (sourceState === 'fallback'
-                                        ? 'קובץ המחירון הרשמי לא נטען. מוצג מחירון ברירת המחדל המובנה.'
-                                        : 'מוצג המחירון הרשמי, זהה לכל המיישמים.')}
-                                className={`hidden md:inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-full whitespace-nowrap ${
-                                    isOverridden ? 'bg-amber-100 text-amber-800'
-                                    : sourceState === 'fallback' ? 'bg-red-100 text-red-700'
-                                    : 'bg-emerald-100 text-emerald-700'}`}>
-                                <Icon name={isOverridden ? 'unlock' : sourceState === 'fallback' ? 'shield' : 'check-circle-2'} size={12} />
-                                {isOverridden ? 'מחירון מקומי' : sourceState === 'fallback' ? 'מחירון ברירת מחדל' : 'מחירון רשמי'}
+                            <span title={pricebookState.title}
+                                className={`hidden md:inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-full whitespace-nowrap ${pricebookState.chipClass}`}>
+                                <Icon name={pricebookState.icon} size={12} />
+                                {pricebookState.chipText}
                             </span>
                         </div>
                         <div className="flex items-center gap-2 md:gap-3">
@@ -1101,47 +1147,80 @@
                                 <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-10">
 
                                     {/* מקור המחירון */}
-                                    <div className={`p-6 rounded-3xl border-2 ${isOverridden ? 'bg-amber-50 border-amber-300' : sourceState === 'fallback' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                                        <h3 className="font-bold text-xl text-slate-800 mb-3 flex items-center gap-2">
-                                            <Icon name={isOverridden ? 'unlock' : 'lock'} size={20} /> מקור המחירון
+                                    <div className={`p-6 rounded-3xl border-2 ${isOverridden ? 'bg-amber-50 border-amber-300' : sourceState === 'partner' ? 'bg-blue-50 border-blue-200' : (sourceState === 'fallback' || sourceState === 'partner-missing') ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                        <h3 className="font-bold text-xl text-slate-800 mb-4 flex items-center gap-2">
+                                            <Icon name={isOverridden ? 'unlock' : 'lock'} size={20} /> איזה מחירון פתוח כרגע
                                         </h3>
 
+                                        <div className="bg-white/80 rounded-2xl border p-4 mb-4 text-sm space-y-1">
+                                            <div className="flex justify-between gap-4">
+                                                <span className="text-slate-500 font-bold">קובץ המחירון</span>
+                                                <span className="font-black text-slate-800">{PRICEBOOK_URL}</span>
+                                            </div>
+                                            <div className="flex justify-between gap-4">
+                                                <span className="text-slate-500 font-bold">מזהה בקישור</span>
+                                                <span className="font-black text-slate-800">{PARTNER_ID || '(ללא — המחירון הרשמי)'}</span>
+                                            </div>
+                                            {pricebookLabel && (
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-slate-500 font-bold">שם המחירון</span>
+                                                    <span className="font-black text-slate-800">{pricebookLabel}</span>
+                                                </div>
+                                            )}
+                                            {officialStamp && (
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-slate-500 font-bold">פורסם בתאריך</span>
+                                                    <span className="font-bold text-slate-600">{new Date(officialStamp).toLocaleString('he-IL')}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {sourceState === 'partner-missing' && (
+                                            <p className="text-sm font-bold text-red-700 mb-3">
+                                                הקובץ {PRICEBOOK_URL} לא נמצא באתר. מוצג המחירון הרשמי במקומו.
+                                            </p>
+                                        )}
                                         {sourceState === 'fallback' && (
                                             <p className="text-sm font-bold text-red-700 mb-3">
-                                                קובץ pricing.json לא נטען. מוצג מחירון ברירת המחדל המובנה בקוד.
+                                                לא נטען שום קובץ מחירון. מוצג המחירון המובנה בקוד.
                                             </p>
                                         )}
 
                                         {isOverridden ? (
                                             <div className="space-y-3">
                                                 <p className="text-sm font-bold text-amber-900">
-                                                    אתה עובד על מחירון מקומי. השינויים שמורים במחשב הזה בלבד ואינם מוצגים למיישמים אחרים.
+                                                    שינית את המחירון בדפדפן הזה. השינויים שמורים כאן בלבד — לא אצל מיישמים אחרים, ולא במכשירים אחרים שלך.
                                                 </p>
                                                 {officialChanged && (
                                                     <p className="text-sm font-bold text-amber-900 bg-white/70 border border-amber-300 rounded-xl p-3">
-                                                        בינתיים פורסם מחירון רשמי מעודכן. חזרה למחירון הרשמי תבטל את השינויים המקומיים ותטען אותו.
+                                                        בינתיים פורסמה גרסה מעודכנת של המחירון. חזרה אליו תבטל את השינויים המקומיים.
                                                     </p>
                                                 )}
                                                 <button onClick={revertToOfficial}
                                                     className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-700">
-                                                    חזור למחירון הרשמי
+                                                    בטל שינויים וחזור למחירון מהקישור
                                                 </button>
                                             </div>
                                         ) : (
-                                            <p className="text-sm font-bold text-emerald-800">
-                                                אתה עובד על המחירון הרשמי, זהה לכל המיישמים. כל שינוי כאן ייצור עותק מקומי שלך בלבד.
+                                            <p className="text-sm font-bold text-slate-700">
+                                                אתה עובד על המחירון כפי שפורסם. כל שינוי שתעשה כאן יישמר בדפדפן הזה בלבד, עד שתחזור למחירון המקורי.
                                             </p>
                                         )}
 
-                                        <div className="mt-5 pt-4 border-t border-slate-300/50 text-xs text-slate-600 leading-relaxed">
-                                            <div className="font-black text-slate-700 mb-1">כדי לעדכן את המחירון עבור כל המיישמים:</div>
-                                            ערוך כאן → לחץ <span className="font-black">ייצא pricing.json</span> → החלף את הקובץ pricing.json בתיקיית המערכת.
-                                            לאחר פרסום האתר, כל מיישם שאינו מחזיק מחירון מקומי יקבל את העדכון אוטומטית.
-                                            {officialStamp && (
-                                                <div className="mt-2 font-bold text-slate-500">
-                                                    המחירון הרשמי שנטען פורסם ב-{new Date(officialStamp).toLocaleString('he-IL')}
+                                        <div className="mt-5 pt-4 border-t border-slate-300/40 text-xs text-slate-600 leading-relaxed space-y-3">
+                                            <div>
+                                                <div className="font-black text-slate-700 mb-1">איך נותנים לכל מיישם מחירון משלו</div>
+                                                <div>1. פותחים כאן את המחירון הרצוי ולוחצים <span className="font-black">ייצא</span>.</div>
+                                                <div>2. משנים את שם הקובץ ל-<span className="font-black">pricing-שם.json</span> ומעלים אותו לתיקיית המערכת.</div>
+                                                <div>3. שולחים למיישם את הקישור האישי שלו:</div>
+                                                <div className="font-black text-slate-800 bg-white/80 border rounded-lg p-2 mt-1 break-all" dir="ltr">
+                                                    {(typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '') + '?p=שם'}
                                                 </div>
-                                            )}
+                                            </div>
+                                            <div>
+                                                <div className="font-black text-slate-700 mb-1">מה רואה מי שנכנס</div>
+                                                <div>נכנס עם קישור אישי — מקבל את המחירון שלו. נכנס בלי קישור — מקבל את המחירון הרשמי (pricing.json).</div>
+                                            </div>
                                         </div>
                                     </div>
 

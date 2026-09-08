@@ -138,8 +138,9 @@
             setupHoursPerDay: 9,
             exchangeRate: 3.7,
 
-            // מינימום מודולים לחיוב (חבילת בסיס + 2 מודולים)
-            minModules: 2,
+            // מינימום חיוב חודשי, ומספר המודולים שהוא שווה ערך לו
+            minMonthlyCharge: 1200,
+            minModules: 3,
 
             brandLogo: 'logo.png',
 
@@ -215,6 +216,7 @@
             c.users       = { ...DEFAULT_CONFIG.users,       ...(raw.users || {}) };
             if (!Array.isArray(c.txStations) || !c.txStations.length) c.txStations = DEFAULT_CONFIG.txStations;
             c.minModules = Number(raw.minModules !== undefined ? raw.minModules : DEFAULT_CONFIG.minModules) || 0;
+            c.minMonthlyCharge = Number(raw.minMonthlyCharge !== undefined ? raw.minMonthlyCharge : DEFAULT_CONFIG.minMonthlyCharge) || 0;
             if (!Array.isArray(c.customSections)) c.customSections = [];
 
             c.modules = (Array.isArray(raw.modules) ? raw.modules : DEFAULT_CONFIG.modules).map(m => {
@@ -378,7 +380,12 @@
                 });
 
                 const platformPrice = Number(config.platformPrice) || 0;
-                const totalMRR = platformPrice + modulesMRR + extraTxCost + extraUsersCost + addonsMRR;
+                const rawMRR = platformPrice + modulesMRR + extraTxCost + extraUsersCost + addonsMRR;
+
+                // רצפת חיוב חודשי: אומדן שנופל מתחתיה מחויב בסכום המינימום
+                const minMonthly     = Number(config.minMonthlyCharge) || 0;
+                const minimumApplied = rawMRR < minMonthly;
+                const totalMRR       = minimumApplied ? minMonthly : rawMRR;
 
                 const setupLaborCost = setupHours * (Number(config.setupHourlyRate) || 0);
                 const totalSetup     = setupLaborCost + addonsSetup;
@@ -392,12 +399,24 @@
                     belowMinimum: details.length > 0 && details.length < (Number(config.minModules) || 0),
                     usersIncluded, userPackSize, userPackPrice, extraUsersCost, totalUsers,
                     addonsMRR, addonsSetup, mrrBreakdown, setupBreakdown, customItems,
-                    platformPrice, totalMRR, setupLaborCost, totalSetup
+                    platformPrice, totalMRR, rawMRR, minMonthly, minimumApplied,
+                    setupLaborCost, totalSetup
                 };
             }, [config, selectedModules, extraTxPacks, extraUserPacks, customSelections, hoursOverride]);
 
             // --- פעולות משתמש ---
-            const handlePrint = () => window.print();
+            const handlePrint = () => {
+                const need = Number(config.minModules) || 0;
+                if (need > 0 && totals.moduleCount < need) {
+                    const head = `נבחרו ${totals.moduleCount} מודולים בלבד.\n\n` +
+                        `המינימום לחיוב חודשי הוא ${money(totals.minMonthly)} (שווה ערך ל-${need} מודולים).\n`;
+                    const body = totals.minimumApplied
+                        ? `החיוב החודשי באומדן יעודכן מ-${money(totals.rawMRR)} ל-${money(totals.minMonthly)}.`
+                        : `החיוב החודשי באומדן (${money(totals.rawMRR)}) כבר עומד במינימום.`;
+                    if (!window.confirm(head + body + '\n\nלהפיק את המסמך?')) return;
+                }
+                window.print();
+            };
 
             const toggleModule = (id) => {
                 setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
@@ -677,12 +696,17 @@
                                 </div>
                                 <div className="mt-4 space-y-2">
                                     <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                                        <Icon name="check-circle-2" size={14} /> אין תקרה למספר המודולים. החיוב הוא חבילת הבסיס בתוספת {config.minModules} מודולים לפחות.
+                                        <Icon name="check-circle-2" size={14} /> אין תקרה למספר המודולים. מינימום חיוב חודשי: {money(totals.minMonthly)} (שווה ערך ל-{config.minModules} מודולים).
                                     </p>
                                     {totals.belowMinimum && (
                                         <div className="flex items-start gap-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
                                             <Icon name="shield" size={16} />
-                                            <span>נבחר {totals.moduleCount} מודול בלבד. המינימום לחיוב הוא {config.minModules} מודולים — האומדן מוצג, אך אינו עומד בתנאי החבילה.</span>
+                                            <span>
+                                                נבחרו {totals.moduleCount} מודולים בלבד.
+                                                {totals.minimumApplied
+                                                    ? ` החיוב החודשי יעלה מ-${money(totals.rawMRR)} ל-${money(totals.minMonthly)} — מינימום החיוב.`
+                                                    : ` החיוב החודשי (${money(totals.rawMRR)}) כבר עובר את מינימום החיוב של ${money(totals.minMonthly)}.`}
+                                            </span>
                                         </div>
                                     )}
                                 </div>
@@ -856,8 +880,16 @@
 
                                     {/* MRR */}
                                     <div>
+                                        {totals.minimumApplied && (
+                                            <div className="flex justify-between text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2">
+                                                <span>סכום מחושב</span>
+                                                <span className="line-through">{money(totals.rawMRR)}</span>
+                                            </div>
+                                        )}
                                         <div className="flex justify-between items-end mb-1 gap-2">
-                                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">חיוב חודשי (MRR)</span>
+                                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">
+                                                חיוב חודשי (MRR){totals.minimumApplied && ' · מינימום'}
+                                            </span>
                                             <span className="text-3xl font-black text-slate-900 leading-none whitespace-nowrap">{money(totals.totalMRR)}</span>
                                         </div>
                                         <div className="text-left text-xs font-bold text-slate-400">{usd(totals.totalMRR, config.exchangeRate)}</div>
@@ -866,7 +898,7 @@
                                         </div>
                                         {totals.belowMinimum && (
                                             <div className="mt-3 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                                                מתחת למינימום החיוב ({config.minModules} מודולים)
+                                                נבחרו {totals.moduleCount} מודולים — מתחת ל-{config.minModules} המזכים במינימום של {money(totals.minMonthly)}
                                             </div>
                                         )}
                                     </div>
@@ -1007,10 +1039,14 @@
                                                         className="w-full p-3 border rounded-xl bg-white font-black" />
                                                 </div>
                                                 <div>
-                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">מינימום מודולים לחיוב</label>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">מינימום חיוב חודשי (₪)</label>
+                                                    <input type="number" min="0" value={config.minMonthlyCharge}
+                                                        onChange={e => updateConfigValue(['minMonthlyCharge'], Math.max(0, Number(e.target.value) || 0))}
+                                                        className="w-full p-3 border rounded-xl bg-white font-black" />
+                                                    <label className="text-[11px] font-bold text-slate-400 mt-2 mb-1 block">שווה ערך למספר מודולים (סף לאזהרה)</label>
                                                     <input type="number" min="0" value={config.minModules}
                                                         onChange={e => updateConfigValue(['minModules'], Math.max(0, Number(e.target.value) || 0))}
-                                                        className="w-full p-3 border rounded-xl bg-white font-black" />
+                                                        className="w-full p-2 border rounded-lg bg-white font-bold" />
                                                 </div>
                                             </div>
                                         </div>
@@ -1376,7 +1412,7 @@
                                 <p style={{ fontSize: '9pt', color: '#64748b', marginTop: '8px' }}>
                                     העלות החודשית שלצד כל מודול היא דמי תמיכה, שירות ותחזוקה. מכסת הטרנזקציות שלצדו היא
                                     מענק הקמה חד-פעמי ללא עלות, ואינה מכסה חודשית מתחדשת.
-                                    {config.minModules > 0 && ' החיוב מותנה בחבילת הבסיס בתוספת ' + config.minModules + ' מודולים לפחות.'}
+                                    {totals.minMonthly > 0 && ' מינימום החיוב החודשי הוא ' + money(totals.minMonthly) + ', שווה ערך ל-' + config.minModules + ' מודולים.'}
                                 </p>
                             </div>
 
@@ -1446,8 +1482,16 @@
                                         <div style={{ fontSize: '10pt', color: '#64748b', marginTop: '5px' }}>
                                             {fmt(totals.monthlyTx)} טרנזקציות לחודש · {fmt(totals.totalUsers)} משתמשים · {totals.moduleCount} מודולים
                                         </div>
+                                        {totals.minimumApplied && (
+                                            <div style={{ fontSize: '10pt', color: '#b45309', marginTop: '5px', fontWeight: 'bold' }}>
+                                                הועלה למינימום החיוב החודשי של {money(totals.minMonthly)}
+                                            </div>
+                                        )}
                                     </div>
                                     <div style={{ textAlign: 'left' }}>
+                                        {totals.minimumApplied && (
+                                            <div style={{ fontSize: '11pt', color: '#b45309', textDecoration: 'line-through' }}>{money(totals.rawMRR)}</div>
+                                        )}
                                         <div style={{ fontSize: '24pt', fontWeight: '900', color: '#1e3a8a', lineHeight: 1 }}>{money(totals.totalMRR)}</div>
                                         <div style={{ fontSize: '11pt', color: '#64748b', marginTop: '5px' }}>{usd(totals.totalMRR, config.exchangeRate)}</div>
                                     </div>

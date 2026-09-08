@@ -136,8 +136,6 @@
         const PRICEBOOK_URL = PARTNER_ID ? 'pricing-' + PARTNER_ID + '.json' : OFFICIAL_URL;
 
         // העקיפה המקומית נשמרת בנפרד לכל מחירון, כדי ששינוי בקישור אחד לא ידלוף לאחר
-        const STORAGE_KEY = 'oneflow_tx_override_v1' + (PARTNER_ID ? '::' + PARTNER_ID : '');
-        const LEGACY_KEY  = 'oneflow_tx_config_v1';        // מפתח מגרסה שבה המחירון היה מקומי בלבד
 
         // השוואת מחירונים תוך התעלמות משדות שאינם חלק מהתמחור
         const pricingFingerprint = (c) => {
@@ -296,6 +294,192 @@
             return c;
         };
 
+
+        // ============================================================
+        //  שכבת אחסון
+        //  LocalAdapter עובד ללא שרת. ApiAdapter מדבר עם מסד נתונים.
+        //  מעבר ביניהם נעשה בהגדרת כתובת השרת במסך הניהול בלבד.
+        // ============================================================
+        const BACKEND_KEY = 'oneflow_backend_v1';
+        const LOCAL_DB_KEY = 'oneflow_pricebooks_v1';
+
+        const readBackendConfig = () => {
+            try {
+                const raw = localStorage.getItem(BACKEND_KEY);
+                const c = raw ? JSON.parse(raw) : {};
+                return { baseUrl: (c.baseUrl || '').replace(/\/+$/, ''), token: c.token || '' };
+            } catch { return { baseUrl: '', token: '' }; }
+        };
+        const writeBackendConfig = (c) => {
+            try { localStorage.setItem(BACKEND_KEY, JSON.stringify(c)); } catch {}
+        };
+
+        const nowIso = () => new Date().toISOString();
+        const newId = (p) => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+        // --- הצפנת סיסמאות (Web Crypto) ---
+        const randomSalt = () => {
+            const a = new Uint8Array(16);
+            (window.crypto || {}).getRandomValues?.(a);
+            return Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
+        };
+        const sha256Hex = async (text) => {
+            const subtle = window.crypto && window.crypto.subtle;
+            if (!subtle) throw new Error('crypto unavailable');
+            const buf = await subtle.digest('SHA-256', new TextEncoder().encode(text));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        };
+        const hashPassword = async (password, salt) => sha256Hex(salt + '|' + password);
+        const cryptoAvailable = () => !!(window.crypto && window.crypto.subtle);
+
+        // --- מתאם מקומי: דפדפן בלבד ---
+        const LocalAdapter = {
+            name: 'local',
+            isConnected: false,
+            _read() {
+                try { return JSON.parse(localStorage.getItem(LOCAL_DB_KEY) || '{"books":{},"versions":{}}'); }
+                catch { return { books: {}, versions: {} }; }
+            },
+            _write(db) {
+                try { localStorage.setItem(LOCAL_DB_KEY, JSON.stringify(db)); return true; }
+                catch { return false; }
+            },
+            async list() {
+                const db = this._read();
+                return Object.values(db.books).map(b => ({
+                    id: b.id, label: b.label, kind: b.kind, implementerName: b.implementerName,
+                    updatedAt: b.updatedAt, version: b.version, hasPassword: !!(b.auth && b.auth.hash)
+                }));
+            },
+            async get(id) { return this._read().books[id] || null; },
+            async put(doc) {
+                const db = this._read();
+                db.books[doc.id] = doc;
+                if (!this._write(db)) throw new Error('storage full');
+                return doc;
+            },
+            async remove(id) {
+                const db = this._read();
+                delete db.books[id];
+                delete db.versions[id];
+                this._write(db);
+            },
+            async listVersions(id) {
+                const db = this._read();
+                return (db.versions[id] || []).map(v => ({ id: v.id, at: v.at, note: v.note, version: v.version }));
+            },
+            async getVersion(id, vid) {
+                const db = this._read();
+                return (db.versions[id] || []).find(v => v.id === vid) || null;
+            },
+            async putVersion(id, entry) {
+                const db = this._read();
+                const list = db.versions[id] || [];
+                list.unshift(entry);
+                db.versions[id] = list.slice(0, 40); // שומרים היסטוריה סבירה בלבד
+                this._write(db);
+                return entry;
+            },
+            async verifyPassword(id, password) {
+                const book = await this.get(id);
+                if (!book || !book.auth || !book.auth.hash) return true;
+                try { return (await hashPassword(password, book.auth.salt)) === book.auth.hash; }
+                catch { return false; }
+            }
+        };
+
+        // --- מתאם שרת: מופעל ברגע שמוגדרת כתובת ---
+        const ApiAdapter = (cfg) => ({
+            name: 'api',
+            isConnected: true,
+            baseUrl: cfg.baseUrl,
+            async _call(path, options = {}) {
+                const res = await fetch(this.baseUrl + path, {
+                    ...options,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(cfg.token ? { 'Authorization': 'Bearer ' + cfg.token } : {}),
+                        ...(options.headers || {})
+                    }
+                });
+                if (res.status === 404) return null;
+                if (!res.ok) throw new Error('שגיאת שרת ' + res.status);
+                return res.status === 204 ? null : res.json();
+            },
+            async list() { return (await this._call('/pricebooks')) || []; },
+            async get(id) { return this._call('/pricebooks/' + encodeURIComponent(id)); },
+            async put(doc) {
+                return this._call('/pricebooks/' + encodeURIComponent(doc.id), {
+                    method: 'PUT', body: JSON.stringify(doc)
+                });
+            },
+            async remove(id) {
+                return this._call('/pricebooks/' + encodeURIComponent(id), { method: 'DELETE' });
+            },
+            async listVersions(id) {
+                return (await this._call('/pricebooks/' + encodeURIComponent(id) + '/versions')) || [];
+            },
+            async getVersion(id, vid) {
+                return this._call('/pricebooks/' + encodeURIComponent(id) + '/versions/' + encodeURIComponent(vid));
+            },
+            async putVersion(id, entry) {
+                return this._call('/pricebooks/' + encodeURIComponent(id) + '/versions', {
+                    method: 'POST', body: JSON.stringify(entry)
+                });
+            },
+            // אימות הסיסמה נעשה בשרת, כך שההצפנה אינה נחשפת בדפדפן
+            async verifyPassword(id, password) {
+                const r = await this._call('/pricebooks/' + encodeURIComponent(id) + '/auth', {
+                    method: 'POST', body: JSON.stringify({ password })
+                });
+                return !!(r && r.ok);
+            }
+        });
+
+        const getStorage = () => {
+            const cfg = readBackendConfig();
+            return cfg.baseUrl ? ApiAdapter(cfg) : LocalAdapter;
+        };
+
+        // ============================================================
+        //  השוואת מחירונים - לצורך מסך הסנכרון
+        // ============================================================
+        const SETTING_LABELS = {
+            platformPrice: 'מחיר פלטפורמה', platformName: 'שם חבילת הבסיס',
+            setupHourlyRate: 'תעריף שעת הקמה', setupHoursPerDay: 'שעות ביום עבודה',
+            exchangeRate: 'שער דולר', minMonthlyCharge: 'מינימום חיוב חודשי',
+            minModules: 'שווה ערך למודולים'
+        };
+
+        const diffConfigs = (mine, theirs) => {
+            const out = { added: [], removed: [], changed: [], settings: [] };
+            if (!mine || !theirs) return out;
+            const mineMods = mine.modules || [], theirMods = theirs.modules || [];
+            const byId = (arr) => Object.fromEntries(arr.map(m => [m.id, m]));
+            const a = byId(mineMods), b = byId(theirMods);
+
+            theirMods.forEach(m => { if (!a[m.id]) out.added.push(m); });
+            mineMods.forEach(m => { if (!b[m.id]) out.removed.push(m); });
+            theirMods.forEach(m => {
+                const cur = a[m.id];
+                if (!cur) return;
+                const fields = [];
+                [['name', 'שם'], ['price', 'תחזוקה'], ['includedTx', 'מענק טרנזקציות'],
+                 ['setupHours', 'שעות הקמה'], ['tier', 'רמה'], ['note', 'תיאור']].forEach(([k, label]) => {
+                    if (String(cur[k] ?? '') !== String(m[k] ?? '')) fields.push({ key: k, label, from: cur[k], to: m[k] });
+                });
+                if (fields.length) out.changed.push({ module: m, fields });
+            });
+
+            Object.keys(SETTING_LABELS).forEach(k => {
+                if (String(mine[k] ?? '') !== String(theirs[k] ?? '')) {
+                    out.settings.push({ key: k, label: SETTING_LABELS[k], from: mine[k], to: theirs[k] });
+                }
+            });
+            out.total = out.added.length + out.removed.length + out.changed.length + out.settings.length;
+            return out;
+        };
+
         // לוגו המותג: מנסה קודם את logo.png, אחר כך את הלוגו הישן, ולבסוף טקסט
         const BrandLogo = ({ src, className = "", style = {} }) => {
             const [stage, setStage] = useState(0);
@@ -321,106 +505,260 @@
         };
 
         function App() {
-            // המחירון הרשמי נטען מהשרת. עקיפה מקומית, אם קיימת, גוברת עליו.
-            const [official, setOfficial] = useState(null);
-            const [sourceState, setSourceState] = useState('loading'); // loading | official | fallback
-            const [override, setOverride] = useState(() => {
-                try {
-                    const saved = localStorage.getItem(STORAGE_KEY);
-                    return saved ? migrateConfig(JSON.parse(saved)) : null;
-                } catch { return null; }
-            });
+            const [storage, setStorage] = useState(() => getStorage());
+            const [backendCfg, setBackendCfg] = useState(() => readBackendConfig());
 
-            // גרסה קודמת שמרה את המחירון מקומית תמיד. נשמר רק מחירון שבאמת הותאם,
-            // כדי שמי שלא שינה דבר יקבל מעתה את העדכונים המרכזיים.
-            const adoptLegacy = (off) => {
-                try {
-                    if (localStorage.getItem(STORAGE_KEY)) return;
-                    const legacy = localStorage.getItem(LEGACY_KEY);
-                    if (!legacy) return;
-                    const migrated = migrateConfig(JSON.parse(legacy));
-                    if (pricingFingerprint(migrated) !== pricingFingerprint(off)) {
-                        setOverride({ ...migrated, _basedOn: off.publishedAt || null });
-                    }
-                    localStorage.removeItem(LEGACY_KEY);
-                } catch {}
-            };
+            const [book, setBook] = useState(null);          // מסמך המחירון הפעיל
+            const [master, setMaster] = useState(null);      // מחירון המאסטר, לצורך סנכרון
+            const [savedPrint, setSavedPrint] = useState(''); // טביעת אצבע של המצב השמור
+            const [loadState, setLoadState] = useState('loading'); // loading | ready | missing | error
+            const [loadNote, setLoadNote] = useState('');
+            const [authed, setAuthed] = useState(false);
+            const [tab, setTab] = useState('quote');         // quote | master
+
+            const isMasterBook = !PARTNER_ID;
+            const config = (book && book.config) || DEFAULT_CONFIG;
+
+            // ---------- טעינת מסמך המחירון ----------
+            const fetchStatic = (url) => fetch(url + '?t=' + Date.now(), { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)));
+
+            const wrapAsBook = (cfg, id, kind) => ({
+                id, kind,
+                label: cfg.label || (kind === 'master' ? 'מחירון מאסטר' : 'מחירון ' + id),
+                implementerName: cfg.implementerName || '',
+                auth: null,
+                config: migrateConfig(cfg),
+                masterVersion: null,
+                version: 1,
+                updatedAt: cfg.publishedAt || nowIso()
+            });
 
             useEffect(() => {
                 let alive = true;
-                const get = (url) => fetch(url + '?t=' + Date.now(), { cache: 'no-store' })
-                    .then(r => r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)));
-
-                const apply = (json, state) => {
+                (async () => {
+                    let masterDoc = null;
+                    try { masterDoc = await storage.get('master'); } catch {}
+                    if (!masterDoc) {
+                        try {
+                            const j = await fetchStatic(OFFICIAL_URL);
+                            masterDoc = wrapAsBook(j, 'master', 'master');
+                            try { await storage.put(masterDoc); } catch {}
+                        } catch {
+                            masterDoc = wrapAsBook(DEFAULT_CONFIG, 'master', 'master');
+                        }
+                    }
                     if (!alive) return;
-                    const off = migrateConfig(json);
-                    setOfficial(off);
-                    setSourceState(state);
-                    if (!PARTNER_ID) adoptLegacy(off);
-                };
-                const giveUp = () => {
-                    if (!alive) return;
-                    setOfficial(DEFAULT_CONFIG);
-                    setSourceState('fallback');
-                    if (!PARTNER_ID) adoptLegacy(DEFAULT_CONFIG);
-                };
+                    setMaster(masterDoc);
 
-                get(PRICEBOOK_URL)
-                    .then(j => apply(j, PARTNER_ID ? 'partner' : 'official'))
-                    .catch(() => {
-                        // קישור אישי שקובץ המחירון שלו חסר - נופלים למחירון הרשמי ומסמנים זאת
-                        if (!PARTNER_ID) return giveUp();
-                        get(OFFICIAL_URL).then(j => apply(j, 'partner-missing')).catch(giveUp);
-                    });
+                    let doc = masterDoc;
+                    let note = '';
+                    if (PARTNER_ID) {
+                        let found = null;
+                        try { found = await storage.get(PARTNER_ID); } catch {}
+                        if (!found) {
+                            // תאימות לאחור: מחירון שפורסם כקובץ סטטי
+                            try { found = wrapAsBook(await fetchStatic(PRICEBOOK_URL), PARTNER_ID, 'implementer'); }
+                            catch {}
+                        }
+                        if (!found) {
+                            if (!alive) return;
+                            setLoadState('missing');
+                            setBook({ ...masterDoc, id: PARTNER_ID });
+                            return;
+                        }
+                        doc = found;
+                    }
+                    if (!alive) return;
+                    setBook(doc);
+                    setSavedPrint(pricingFingerprint(doc.config));
+                    setAuthed(!(doc.auth && doc.auth.hash));
+                    setLoadNote(note);
+                    setLoadState('ready');
+                })().catch(() => { if (alive) setLoadState('error'); });
                 return () => { alive = false; };
-            }, []);
+            }, [storage]);
 
-            // שם המיישם מגיע מהמחירון האישי, אלא אם המיישם כבר הזין שם משלו
+            // ---------- סנכרון ברקע: בדיקה תקופתית אם המאסטר התעדכן ----------
             useEffect(() => {
-                if (official && official.implementerName) {
-                    setBrand(prev => prev.name ? prev : { ...prev, name: official.implementerName });
+                if (isMasterBook) return;
+                const tick = async () => {
+                    try {
+                        let m = await storage.get('master');
+                        if (!m) m = wrapAsBook(await fetchStatic(OFFICIAL_URL), 'master', 'master');
+                        setMaster(prev => (prev && pricingFingerprint(prev.config) === pricingFingerprint(m.config)) ? prev : m);
+                    } catch {}
+                };
+                const h = setInterval(tick, 120000);
+                return () => clearInterval(h);
+            }, [storage, isMasterBook]);
+
+            useEffect(() => {
+                if (book && book.implementerName) {
+                    setBrand(prev => prev.name ? prev : { ...prev, name: book.implementerName });
                 }
-            }, [official]);
+            }, [book]);
 
-            const config = override || official || DEFAULT_CONFIG;
-            const isOverridden = !!override;
+            const dirty = !!book && pricingFingerprint(book.config) !== savedPrint;
+            const masterDiff = useMemo(
+                () => (book && master) ? diffConfigs(book.config, master.config) : { added: [], removed: [], changed: [], settings: [], total: 0 },
+                [book, master]
+            );
+            const masterBehind = !isMasterBook && masterDiff.total > 0;
 
-            const pricebookLabel = (official && (official.label || official.implementerName)) || '';
             const pricebookState = (() => {
-                if (isOverridden) return {
-                    chipText: 'מחירון מקומי', icon: 'unlock', chipClass: 'bg-amber-100 text-amber-800',
-                    title: 'המחירון שונה בדפדפן הזה בלבד. השינויים אינם מגיעים לאף אחד אחר.'
+                if (loadState === 'missing') return {
+                    chipText: 'מחירון לא נמצא', icon: 'shield', chipClass: 'bg-red-100 text-red-700',
+                    title: 'לא נמצא מחירון למזהה ' + PARTNER_ID + '. מוצג מחירון המאסטר במקומו.'
                 };
-                if (sourceState === 'partner') return {
-                    chipText: pricebookLabel || ('מחירון ' + PARTNER_ID), icon: 'check-circle-2',
-                    chipClass: 'bg-blue-100 text-blue-700',
-                    title: 'המחירון האישי שלך, נטען מהקובץ ' + PRICEBOOK_URL
+                if (dirty) return {
+                    chipText: 'שינויים לא שמורים', icon: 'unlock', chipClass: 'bg-amber-100 text-amber-800',
+                    title: 'יש שינויים שטרם נשמרו במחירון.'
                 };
-                if (sourceState === 'partner-missing') return {
-                    chipText: 'מחירון אישי לא נמצא', icon: 'shield', chipClass: 'bg-red-100 text-red-700',
-                    title: 'הקובץ ' + PRICEBOOK_URL + ' לא נמצא. מוצג המחירון הרשמי במקומו.'
-                };
-                if (sourceState === 'fallback') return {
-                    chipText: 'מחירון ברירת מחדל', icon: 'shield', chipClass: 'bg-red-100 text-red-700',
-                    title: 'לא נטען קובץ מחירון. מוצג המחירון המובנה בקוד.'
+                if (isMasterBook) return {
+                    chipText: 'מחירון מאסטר', icon: 'check-circle-2', chipClass: 'bg-emerald-100 text-emerald-700',
+                    title: 'מחירון המאסטר. ממנו נוצרים מחירוני המיישמים.'
                 };
                 return {
-                    chipText: 'מחירון רשמי', icon: 'check-circle-2', chipClass: 'bg-emerald-100 text-emerald-700',
-                    title: 'המחירון הרשמי, ברירת המחדל לכל מי שנכנס בלי קישור אישי.'
+                    chipText: (book && book.label) || ('מחירון ' + PARTNER_ID), icon: 'check-circle-2',
+                    chipClass: 'bg-blue-100 text-blue-700',
+                    title: 'המחירון האישי שלך.'
                 };
             })();
-            const officialStamp = (official && official.publishedAt) || null;
-            // המחירון הרשמי התעדכן מאז שנוצרה העקיפה המקומית
-            const officialChanged = isOverridden && !!officialStamp && override._basedOn !== officialStamp;
 
-            // כל עריכה בניהול יוצרת או מעדכנת את העקיפה המקומית
+            // ---------- שמירה וגרסאות ----------
+            const saveBook = async (note) => {
+                if (!book) return;
+                const next = { ...book, version: (Number(book.version) || 0) + 1, updatedAt: nowIso() };
+                await storage.put(next);
+                try {
+                    await storage.putVersion(next.id, {
+                        id: newId('v'), at: next.updatedAt, note: note || 'עדכון מחירון',
+                        version: next.version, config: next.config,
+                        label: next.label, implementerName: next.implementerName
+                    });
+                } catch {}
+                setBook(next);
+                setSavedPrint(pricingFingerprint(next.config));
+                if (next.id === 'master') setMaster(next);
+                return next;
+            };
+
+            const submitPassword = async (e) => {
+                e.preventDefault();
+                setPwError('');
+                try {
+                    const ok = await storage.verifyPassword(book.id, pwInput);
+                    if (ok) { setAuthed(true); setPwInput(''); }
+                    else setPwError('סיסמה שגויה.');
+                } catch (err) { setPwError('בדיקת הסיסמה נכשלה: ' + (err.message || err)); }
+            };
+
+            const refreshBooks = async () => {
+                try { setBooks(await storage.list()); } catch { setBooks([]); }
+            };
+            const refreshVersions = async () => {
+                if (!book) return;
+                try { setVersions(await storage.listVersions(book.id)); } catch { setVersions([]); }
+            };
+            useEffect(() => {
+                if (!isAdminOpen) return;
+                refreshBooks();
+                refreshVersions();
+            }, [isAdminOpen, storage, book && book.id]);
+
+            const slugify = (v) => v.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+
+            // יצירת מחירון למיישם מתוך מחירון המאסטר
+            const generatePricebook = async () => {
+                setGenError(''); setGenResult(null);
+                const id = slugify(genForm.id);
+                if (!id) { setGenError('יש להזין מזהה באותיות אנגליות.'); return; }
+                if (id === 'master') { setGenError('המזהה master שמור למחירון המאסטר.'); return; }
+                if (!genForm.password || genForm.password.length < 4) { setGenError('סיסמה חייבת להכיל 4 תווים לפחות.'); return; }
+                if (!cryptoAvailable()) { setGenError('הדפדפן אינו תומך בהצפנה. יש לפתוח את האתר דרך https.'); return; }
+                setBusy('gen');
+                try {
+                    const existing = await storage.get(id);
+                    if (existing && !window.confirm('כבר קיים מחירון במזהה ' + id + '. להחליף אותו?')) { setBusy(''); return; }
+                    const salt = randomSalt();
+                    const hash = await hashPassword(genForm.password, salt);
+                    const doc = {
+                        id, kind: 'implementer',
+                        label: genForm.label || ('מחירון ' + id),
+                        implementerName: genForm.implementerName || '',
+                        auth: { salt, hash },
+                        config: JSON.parse(JSON.stringify(config)),
+                        masterVersion: (book && book.version) || 1,
+                        version: 1, updatedAt: nowIso()
+                    };
+                    await storage.put(doc);
+                    try {
+                        await storage.putVersion(id, {
+                            id: newId('v'), at: doc.updatedAt, note: 'נוצר ממחירון המאסטר',
+                            version: 1, config: doc.config, label: doc.label, implementerName: doc.implementerName
+                        });
+                    } catch {}
+                    setGenResult({
+                        id,
+                        link: window.location.origin + window.location.pathname + '?p=' + id,
+                        password: genForm.password
+                    });
+                    setGenForm({ id: '', label: '', implementerName: '', password: '' });
+                    await refreshBooks();
+                } catch (e) { setGenError('היצירה נכשלה: ' + (e.message || e)); }
+                setBusy('');
+            };
+
+            const resetBookPassword = async (id) => {
+                const pw = window.prompt('סיסמה חדשה למחירון ' + id + ':');
+                if (!pw) return;
+                if (pw.length < 4) { alert('סיסמה חייבת להכיל 4 תווים לפחות.'); return; }
+                try {
+                    const doc = await storage.get(id);
+                    if (!doc) return;
+                    const salt = randomSalt();
+                    doc.auth = { salt, hash: await hashPassword(pw, salt) };
+                    doc.updatedAt = nowIso();
+                    await storage.put(doc);
+                    await refreshBooks();
+                    alert('הסיסמה עודכנה. מסור אותה למיישם.');
+                } catch (e) { alert('עדכון הסיסמה נכשל: ' + (e.message || e)); }
+            };
+
+            const deleteBook = async (id) => {
+                if (id === 'master') { alert('לא ניתן למחוק את מחירון המאסטר.'); return; }
+                if (!window.confirm('למחוק לצמיתות את המחירון ' + id + ' ואת היסטוריית הגרסאות שלו?')) return;
+                try { await storage.remove(id); await refreshBooks(); }
+                catch (e) { alert('המחיקה נכשלה: ' + (e.message || e)); }
+            };
+
+            const restoreVersion = async (vid) => {
+                if (!book) return;
+                if (!window.confirm('לשחזר את המחירון לגרסה זו? המצב הנוכחי יישמר כגרסה חדשה.')) return;
+                try {
+                    const v = await storage.getVersion(book.id, vid);
+                    if (!v) { alert('הגרסה לא נמצאה.'); return; }
+                    setBook(prev => ({ ...prev, config: JSON.parse(JSON.stringify(v.config)) }));
+                    alert('הגרסה נטענה. לחץ "שמור" כדי לקבע אותה.');
+                } catch (e) { alert('השחזור נכשל: ' + (e.message || e)); }
+            };
+
+            const applyBackendConfig = (cfg) => {
+                writeBackendConfig(cfg);
+                setBackendCfg(cfg);
+                setStorage(getStorage());
+                setLoadState('loading');
+            };
+
             const setConfig = (updater) => {
-                setOverride(prev => {
-                    const base = prev || official || DEFAULT_CONFIG;
-                    const next = typeof updater === 'function' ? updater(base) : updater;
-                    return { ...next, _basedOn: officialStamp };
+                setBook(prev => {
+                    if (!prev) return prev;
+                    const nextCfg = typeof updater === 'function' ? updater(prev.config) : updater;
+                    return { ...prev, config: nextCfg };
                 });
             };
+
 
             // מיתוג המיישם - נשמר בנפרד מהמחירון כדי לשרוד איפוס הגדרות
             const [brand, setBrand] = useState(() => {
@@ -450,20 +788,28 @@
             const fileInputRef = useRef(null);
             const logoInputRef = useRef(null);
 
+            const [pwInput, setPwInput] = useState('');
+            const [pwError, setPwError] = useState('');
+            const [books, setBooks] = useState([]);
+            const [versions, setVersions] = useState([]);
+            const [genForm, setGenForm] = useState({ id: '', label: '', implementerName: '', password: '' });
+            const [genResult, setGenResult] = useState(null);
+            const [genError, setGenError] = useState('');
+            const [busy, setBusy] = useState('');
+
             const [newModule, setNewModule] = useState({ name: '', icon: 'package', tier: 'basic', setupHours: 0, note: '' });
             const [newSectionTitle, setNewSectionTitle] = useState('');
 
-            // שמירה אוטומטית של העקיפה המקומית בלבד
-            useEffect(() => {
-                try {
-                    if (override) localStorage.setItem(STORAGE_KEY, JSON.stringify(override));
-                    else localStorage.removeItem(STORAGE_KEY);
-                } catch {}
-            }, [override]);
-
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [config, selectedModules, extraTxPacks, extraUserPacks, isAdminOpen, brand, sourceState]);
+            }, [config, selectedModules, extraTxPacks, extraUserPacks, isAdminOpen, brand, loadState, tab]);
+
+            // אזהרה לפני יציאה עם שינויים שלא נשמרו
+            useEffect(() => {
+                const h = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
+                window.addEventListener('beforeunload', h);
+                return () => window.removeEventListener('beforeunload', h);
+            }, [dirty]);
 
             // שמירה אוטומטית של מיתוג המיישם
             useEffect(() => {
@@ -658,17 +1004,58 @@
                 setNewSectionTitle('');
             };
 
-            const revertToOfficial = () => {
-                if (!isOverridden) return;
-                if (window.confirm('לבטל את כל השינויים המקומיים ולחזור למחירון שנטען מהקישור?\nהלוגו והשם שלך יישמרו.')) {
-                    setOverride(null);
-                    try { localStorage.removeItem(STORAGE_KEY); } catch {}
-                }
+            const discardChanges = async () => {
+                if (!dirty || !book) return;
+                if (!window.confirm('לבטל את השינויים שלא נשמרו ולחזור לגרסה השמורה?')) return;
+                let fresh = null;
+                try { fresh = await storage.get(book.id); } catch {}
+                if (fresh) { setBook(fresh); setSavedPrint(pricingFingerprint(fresh.config)); }
             };
 
-            // מייצא את המחירון הנוכחי כקובץ pricing.json מוכן לפרסום
+            const handleSave = async () => {
+                const note = window.prompt('תיאור קצר לשינוי (יופיע בהיסטוריית הגרסאות):', 'עדכון מחירון');
+                if (note === null) return;
+                try {
+                    await saveBook(note || 'עדכון מחירון');
+                    await refreshVersions();
+                    await refreshBooks();
+                    alert('המחירון נשמר.');
+                } catch (e) { alert('שמירה נכשלה: ' + (e.message || e)); }
+            };
+
+            // סנכרון מחירון המיישם מול המאסטר
+            const syncFromMaster = async () => {
+                if (!book || !master) return;
+                if (!window.confirm('לעדכן את המחירון שלך לפי מחירון המאסטר?\nכל השינויים שביצעת יוחלפו בערכי המאסטר.')) return;
+                const next = {
+                    ...book,
+                    config: JSON.parse(JSON.stringify(master.config)),
+                    masterVersion: master.version,
+                    version: (Number(book.version) || 0) + 1,
+                    updatedAt: nowIso()
+                };
+                try {
+                    await storage.put(next);
+                    try {
+                        await storage.putVersion(next.id, {
+                            id: newId('v'), at: next.updatedAt,
+                            note: 'סנכרון ממחירון המאסטר (גרסה ' + (master.version || '-') + ')',
+                            version: next.version, config: next.config,
+                            label: next.label, implementerName: next.implementerName
+                        });
+                    } catch {}
+                    setBook(next);
+                    setSavedPrint(pricingFingerprint(next.config));
+                    await refreshVersions();
+                    setTab('quote');
+                    alert('המחירון סונכרן בהצלחה.');
+                } catch (e) { alert('הסנכרון נכשל: ' + (e.message || e)); }
+            };
+
+            // גיבוי המחירון הנוכחי לקובץ
             const exportConfig = () => {
-                const out = { ...config, publishedAt: new Date().toISOString() };
+                const out = { ...config, publishedAt: new Date().toISOString(),
+                              label: book ? book.label : '', implementerName: book ? book.implementerName : '' };
                 delete out._basedOn;
                 const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(out, null, 2));
                 const a = document.createElement('a');
@@ -770,13 +1157,39 @@
                 </div>
             );
 
-            if (sourceState === 'loading') {
+            if (loadState === 'loading' || !book) {
                 return (
                     <div dir="rtl" className="min-h-screen bg-slate-50 flex items-center justify-center">
                         <div className="text-center">
                             <div className="text-lg font-black text-slate-700">טוען מחירון…</div>
                             <div className="text-sm text-slate-400 mt-1">ONEFLOW PRO BUSINESS</div>
                         </div>
+                    </div>
+                );
+            }
+
+            if (!authed) {
+                return (
+                    <div dir="rtl" className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+                        <form onSubmit={submitPassword}
+                            className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 w-full max-w-sm text-center">
+                            <BrandLogo src={config.brandLogo} className="h-10 object-contain mx-auto mb-5" />
+                            <h1 className="text-xl font-black text-slate-800">{book.label || 'מחירון מוגן'}</h1>
+                            <p className="text-sm text-slate-500 mt-1 mb-6">הזן את הסיסמה שקיבלת כדי להיכנס למחירון שלך</p>
+                            <input type="password" value={pwInput} autoFocus
+                                onChange={e => { setPwInput(e.target.value); setPwError(''); }}
+                                className="w-full p-3 border rounded-xl text-center font-bold tracking-widest" placeholder="סיסמה" />
+                            {pwError && <p className="text-xs font-bold text-red-600 mt-2">{pwError}</p>}
+                            <button type="submit"
+                                className="w-full mt-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl">
+                                כניסה
+                            </button>
+                            {!backendCfg.baseUrl && (
+                                <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-5 leading-relaxed">
+                                    המערכת אינה מחוברת למסד נתונים. ההגנה כאן מונעת כניסה מזדמנת בלבד ואינה אבטחה מלאה.
+                                </p>
+                            )}
+                        </form>
                     </div>
                 );
             }
@@ -819,8 +1232,133 @@
                         </div>
                     </header>
 
+                    {/* Tabs */}
+                    {!isMasterBook && (
+                        <div className="no-print max-w-[90rem] mx-auto px-4 md:px-8 pt-5">
+                            <div className="flex gap-2 border-b border-slate-200">
+                                <button onClick={() => setTab('quote')}
+                                    className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors ${tab === 'quote' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                    בניית אומדן
+                                </button>
+                                <button onClick={() => setTab('master')}
+                                    className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors flex items-center gap-2 ${tab === 'master' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                    מחירון המאסטר
+                                    {masterBehind && <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{masterDiff.total}</span>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Master sync tab */}
+                    {!isMasterBook && tab === 'master' && (
+                        <main className="no-print max-w-[90rem] mx-auto p-4 md:p-8 space-y-6">
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <div className="flex flex-wrap justify-between items-start gap-4">
+                                    <div>
+                                        <h2 className="text-2xl font-black text-slate-800">מחירון המאסטר</h2>
+                                        <p className="text-sm text-slate-500 mt-1">
+                                            {master ? ((master.label || 'מחירון מאסטר') + ' · גרסה ' + (master.version || '-') +
+                                                ' · עודכן ' + new Date(master.updatedAt || Date.now()).toLocaleString('he-IL')) : 'טוען…'}
+                                        </p>
+                                    </div>
+                                    <button onClick={syncFromMaster} disabled={!masterBehind}
+                                        className={`px-7 py-3 rounded-xl font-black shadow-lg flex items-center gap-2 ${masterBehind
+                                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                            : 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'}`}>
+                                        <Icon name="download" size={18} /> סנכרן מחירונים
+                                    </button>
+                                </div>
+
+                                {!masterBehind ? (
+                                    <div className="mt-6 flex items-center gap-2 text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+                                        <Icon name="check-circle-2" size={18} /> המחירון שלך זהה למחירון המאסטר. אין מה לסנכרן.
+                                    </div>
+                                ) : (
+                                    <div className="mt-6 space-y-5">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                                            <Icon name="shield" size={18} />
+                                            נמצאו {masterDiff.total} הבדלים בין המחירון שלך למחירון המאסטר. סנכרון יאמץ את ערכי המאסטר.
+                                        </div>
+
+                                        {masterDiff.added.length > 0 && (
+                                            <div>
+                                                <h3 className="font-black text-slate-700 mb-2">מודולים שנוספו במאסטר ({masterDiff.added.length})</h3>
+                                                <div className="space-y-2">
+                                                    {masterDiff.added.map(m => (
+                                                        <div key={m.id} className="flex flex-wrap items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                                                            <Icon name={m.icon} size={18} className="text-emerald-700" />
+                                                            <span className="font-bold text-slate-800 flex-grow">{m.name}</span>
+                                                            <span className="text-sm font-black text-emerald-800">{money(m.price)} /חודש</span>
+                                                            <span className="text-xs font-bold text-slate-500">{fmt(m.setupHours)} שעות</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {masterDiff.removed.length > 0 && (
+                                            <div>
+                                                <h3 className="font-black text-slate-700 mb-2">מודולים שאינם במאסטר ({masterDiff.removed.length})</h3>
+                                                <div className="space-y-2">
+                                                    {masterDiff.removed.map(m => (
+                                                        <div key={m.id} className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
+                                                            <Icon name={m.icon} size={18} className="text-red-600" />
+                                                            <span className="font-bold text-slate-800 flex-grow">{m.name}</span>
+                                                            <span className="text-xs font-bold text-red-600">יוסר בסנכרון</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {masterDiff.changed.length > 0 && (
+                                            <div>
+                                                <h3 className="font-black text-slate-700 mb-2">מודולים ששונו ({masterDiff.changed.length})</h3>
+                                                <div className="space-y-2">
+                                                    {masterDiff.changed.map(({ module, fields }) => (
+                                                        <div key={module.id} className="bg-slate-50 border rounded-xl p-3">
+                                                            <div className="flex items-center gap-2 font-bold text-slate-800 mb-2">
+                                                                <Icon name={module.icon} size={16} /> {module.name}
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                {fields.map(f => (
+                                                                    <div key={f.key} className="flex flex-wrap items-center gap-2 text-xs">
+                                                                        <span className="font-bold text-slate-500 w-32">{f.label}</span>
+                                                                        <span className="line-through text-red-500 font-bold">{String(f.from ?? '—')}</span>
+                                                                        <Icon name="route" size={12} className="text-slate-400" />
+                                                                        <span className="font-black text-emerald-700">{String(f.to ?? '—')}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {masterDiff.settings.length > 0 && (
+                                            <div>
+                                                <h3 className="font-black text-slate-700 mb-2">הגדרות ששונו ({masterDiff.settings.length})</h3>
+                                                <div className="space-y-1">
+                                                    {masterDiff.settings.map(f => (
+                                                        <div key={f.key} className="flex flex-wrap items-center gap-2 text-xs bg-slate-50 border rounded-lg p-2">
+                                                            <span className="font-bold text-slate-500 w-40">{f.label}</span>
+                                                            <span className="line-through text-red-500 font-bold">{String(f.from ?? '—')}</span>
+                                                            <Icon name="route" size={12} className="text-slate-400" />
+                                                            <span className="font-black text-emerald-700">{String(f.to ?? '—')}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </section>
+                        </main>
+                    )}
+
                     {/* Main Interface */}
-                    <main className="no-print max-w-[90rem] mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8">
+                    <main className={`no-print max-w-[90rem] mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-8 ${tab !== 'quote' ? 'hidden' : ''}`}>
 
                         <div className="flex-grow space-y-8 pb-24 min-w-0">
 
@@ -1124,19 +1662,22 @@
                                 </h2>
                                 <div className="flex flex-wrap gap-2 md:gap-4 items-center">
                                     <input type="file" accept=".json" style={{ display: 'none' }} ref={fileInputRef} onChange={importConfig} />
+                                    {dirty && <span className="text-xs font-black text-amber-700 bg-amber-100 px-3 py-1.5 rounded-lg">שינויים לא שמורים</span>}
+                                    <button onClick={handleSave} disabled={!dirty}
+                                        className={`font-black text-sm px-5 py-1.5 rounded-lg ${dirty ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+                                        שמור מחירון
+                                    </button>
+                                    <button onClick={discardChanges} disabled={!dirty}
+                                        className={`font-bold text-sm border px-3 py-1.5 rounded-lg ${dirty ? 'text-red-500 hover:bg-red-50 border-red-200' : 'text-slate-300 border-slate-200 cursor-not-allowed'}`}>
+                                        בטל שינויים
+                                    </button>
                                     <button onClick={() => fileInputRef.current.click()}
                                         className="text-slate-600 hover:bg-slate-200 font-bold text-sm flex items-center gap-1 border border-slate-300 px-3 py-1.5 rounded-lg">
-                                        <Icon name="upload" size={14} /> ייבוא מגיבוי
+                                        <Icon name="upload" size={14} /> ייבוא
                                     </button>
                                     <button onClick={exportConfig}
                                         className="text-blue-600 hover:bg-blue-50 font-bold text-sm flex items-center gap-1 border border-blue-200 px-3 py-1.5 rounded-lg">
-                                        <Icon name="download" size={14} /> ייצא pricing.json
-                                    </button>
-                                    <button onClick={revertToOfficial} disabled={!isOverridden}
-                                        className={`font-bold text-sm border px-3 py-1.5 rounded-lg ${isOverridden
-                                            ? 'text-red-500 hover:bg-red-50 border-red-200'
-                                            : 'text-slate-300 border-slate-200 cursor-not-allowed'}`}>
-                                        חזור למחירון הרשמי
+                                        <Icon name="download" size={14} /> גיבוי
                                     </button>
                                     <button onClick={() => setIsAdminOpen(false)}
                                         className="bg-slate-900 text-white px-6 py-2 rounded-xl font-bold hover:bg-slate-700">סגור</button>
@@ -1146,82 +1687,181 @@
                             <div className="flex-grow overflow-y-auto custom-scroll bg-slate-50">
                                 <div className="max-w-5xl mx-auto p-4 md:p-8 space-y-10">
 
-                                    {/* מקור המחירון */}
-                                    <div className={`p-6 rounded-3xl border-2 ${isOverridden ? 'bg-amber-50 border-amber-300' : sourceState === 'partner' ? 'bg-blue-50 border-blue-200' : (sourceState === 'fallback' || sourceState === 'partner-missing') ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                    {/* מצב המחירון */}
+                                    <div className={`p-6 rounded-3xl border-2 ${dirty ? 'bg-amber-50 border-amber-300' : isMasterBook ? 'bg-emerald-50 border-emerald-200' : 'bg-blue-50 border-blue-200'}`}>
                                         <h3 className="font-bold text-xl text-slate-800 mb-4 flex items-center gap-2">
-                                            <Icon name={isOverridden ? 'unlock' : 'lock'} size={20} /> איזה מחירון פתוח כרגע
+                                            <Icon name="database" size={20} /> המחירון הפתוח כרגע
                                         </h3>
+                                        <div className="bg-white/80 rounded-2xl border p-4 text-sm space-y-1">
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500 font-bold">שם</span><span className="font-black text-slate-800">{book.label}</span></div>
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500 font-bold">מזהה</span><span className="font-black text-slate-800">{book.id}</span></div>
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500 font-bold">סוג</span><span className="font-black text-slate-800">{isMasterBook ? 'מאסטר' : 'מיישם'}</span></div>
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500 font-bold">גרסה</span><span className="font-black text-slate-800">{book.version}</span></div>
+                                            <div className="flex justify-between gap-4"><span className="text-slate-500 font-bold">עודכן</span><span className="font-bold text-slate-600">{new Date(book.updatedAt || Date.now()).toLocaleString('he-IL')}</span></div>
+                                        </div>
+                                        {loadState === 'missing' && (
+                                            <p className="text-sm font-bold text-red-700 mt-3">לא נמצא מחירון למזהה {PARTNER_ID}. מוצג מחירון המאסטר.</p>
+                                        )}
+                                    </div>
 
-                                        <div className="bg-white/80 rounded-2xl border p-4 mb-4 text-sm space-y-1">
-                                            <div className="flex justify-between gap-4">
-                                                <span className="text-slate-500 font-bold">קובץ המחירון</span>
-                                                <span className="font-black text-slate-800">{PRICEBOOK_URL}</span>
+                                    {/* חיבור למסד נתונים */}
+                                    <div className={`p-6 rounded-3xl border-2 ${backendCfg.baseUrl ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-100 border-slate-300'}`}>
+                                        <h3 className="font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
+                                            <Icon name="server" size={20} /> חיבור למסד נתונים
+                                        </h3>
+                                        <p className={`text-sm font-bold mb-4 ${backendCfg.baseUrl ? 'text-emerald-800' : 'text-slate-600'}`}>
+                                            {backendCfg.baseUrl
+                                                ? 'מחובר. המחירונים, הסיסמאות והגרסאות נשמרים בשרת וזמינים מכל מכשיר.'
+                                                : 'לא מחובר. הכל נשמר בדפדפן הזה בלבד — מחירונים שתיצור לא יהיו זמינים למיישמים ממכשירים אחרים.'}
+                                        </p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">כתובת ה-API</label>
+                                                <input value={backendCfg.baseUrl} dir="ltr"
+                                                    onChange={e => setBackendCfg({ ...backendCfg, baseUrl: e.target.value })}
+                                                    placeholder="https://api.example.com" className="w-full p-3 border rounded-xl bg-white font-bold" />
                                             </div>
-                                            <div className="flex justify-between gap-4">
-                                                <span className="text-slate-500 font-bold">מזהה בקישור</span>
-                                                <span className="font-black text-slate-800">{PARTNER_ID || '(ללא — המחירון הרשמי)'}</span>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מפתח גישה</label>
+                                                <input value={backendCfg.token} dir="ltr" type="password"
+                                                    onChange={e => setBackendCfg({ ...backendCfg, token: e.target.value })}
+                                                    placeholder="Bearer token" className="w-full p-3 border rounded-xl bg-white font-bold" />
                                             </div>
-                                            {pricebookLabel && (
-                                                <div className="flex justify-between gap-4">
-                                                    <span className="text-slate-500 font-bold">שם המחירון</span>
-                                                    <span className="font-black text-slate-800">{pricebookLabel}</span>
+                                        </div>
+                                        <div className="flex gap-2 mt-3">
+                                            <button onClick={() => applyBackendConfig(backendCfg)}
+                                                className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-700">התחבר</button>
+                                            {backendCfg.baseUrl && (
+                                                <button onClick={() => applyBackendConfig({ baseUrl: '', token: '' })}
+                                                    className="px-6 py-2.5 rounded-xl font-bold text-red-500 bg-white border border-red-200 hover:bg-red-50">נתק</button>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+                                            מבנה ה-API הנדרש מתועד בקובץ README.md שבתיקיית המערכת. עד לחיבור, המערכת עובדת במלואה מול אחסון הדפדפן.
+                                        </p>
+                                    </div>
+
+                                    {/* מחולל מחירונים - רק במחירון המאסטר */}
+                                    {isMasterBook && (
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                            <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-2">מחולל מחירונים למיישמים</h3>
+                                            <p className="text-xs text-slate-400 mb-6">
+                                                המחירון נוצר כהעתק של המחירון הפתוח כרגע. המיישם יקבל קישור וסיסמה, ויוכל לסנכרן ממך עדכונים בכל עת.
+                                            </p>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-blue-50 border border-blue-200 rounded-2xl p-5">
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">מזהה באנגלית (מופיע בקישור)</label>
+                                                    <input value={genForm.id} dir="ltr"
+                                                        onChange={e => setGenForm({ ...genForm, id: e.target.value })}
+                                                        placeholder="moshe" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">שם המחירון</label>
+                                                    <input value={genForm.label}
+                                                        onChange={e => setGenForm({ ...genForm, label: e.target.value })}
+                                                        placeholder="מחירון משה" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">שם המיישם</label>
+                                                    <input value={genForm.implementerName}
+                                                        onChange={e => setGenForm({ ...genForm, implementerName: e.target.value })}
+                                                        placeholder="משה כהן" className="w-full p-3 border rounded-xl bg-white" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">סיסמה למיישם</label>
+                                                    <input value={genForm.password} dir="ltr"
+                                                        onChange={e => setGenForm({ ...genForm, password: e.target.value })}
+                                                        placeholder="לפחות 4 תווים" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                </div>
+                                                <div className="md:col-span-2 flex items-center gap-3">
+                                                    <button onClick={generatePricebook} disabled={busy === 'gen'}
+                                                        className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg disabled:opacity-50">
+                                                        {busy === 'gen' ? 'יוצר…' : 'צור מחירון ושלח קישור'}
+                                                    </button>
+                                                    {genError && <span className="text-sm font-bold text-red-600">{genError}</span>}
+                                                </div>
+                                            </div>
+
+                                            {genResult && (
+                                                <div className="mt-4 bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-5">
+                                                    <div className="font-black text-emerald-900 mb-3 flex items-center gap-2">
+                                                        <Icon name="check-circle-2" size={18} /> המחירון "{genResult.id}" נוצר. מסור למיישם:
+                                                    </div>
+                                                    <div className="space-y-2 text-sm">
+                                                        <div>
+                                                            <div className="text-xs font-bold text-emerald-700 mb-1">קישור אישי</div>
+                                                            <div className="flex gap-2">
+                                                                <input readOnly dir="ltr" value={genResult.link}
+                                                                    className="flex-grow p-2.5 border rounded-lg bg-white font-bold text-xs" />
+                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.link)}
+                                                                    className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-xs font-bold text-emerald-700 mb-1">סיסמה</div>
+                                                            <div className="flex gap-2">
+                                                                <input readOnly dir="ltr" value={genResult.password}
+                                                                    className="flex-grow p-2.5 border rounded-lg bg-white font-black" />
+                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.password)}
+                                                                    className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11px] text-emerald-700 mt-3">הסיסמה נשמרת מוצפנת ולא ניתן לשחזר אותה. אם תישכח, אפשר לקבוע חדשה ברשימה שמתחת.</p>
                                                 </div>
                                             )}
-                                            {officialStamp && (
-                                                <div className="flex justify-between gap-4">
-                                                    <span className="text-slate-500 font-bold">פורסם בתאריך</span>
-                                                    <span className="font-bold text-slate-600">{new Date(officialStamp).toLocaleString('he-IL')}</span>
+
+                                            <h4 className="font-black text-slate-700 mt-8 mb-3">מחירונים קיימים ({books.length})</h4>
+                                            {books.length === 0 ? (
+                                                <p className="text-sm text-slate-400">עדיין לא נוצרו מחירונים.</p>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {books.map(b => (
+                                                        <div key={b.id} className="flex flex-wrap items-center gap-3 bg-slate-50 border rounded-xl p-3">
+                                                            <div className="flex-grow min-w-[160px]">
+                                                                <div className="font-black text-slate-800">{b.label || b.id}</div>
+                                                                <div className="text-[11px] text-slate-500">
+                                                                    {b.id} · גרסה {b.version} · {b.hasPassword ? 'מוגן בסיסמה' : 'ללא סיסמה'}
+                                                                    {b.implementerName ? ' · ' + b.implementerName : ''}
+                                                                </div>
+                                                            </div>
+                                                            {b.id !== 'master' && (
+                                                                <>
+                                                                    <button onClick={() => navigator.clipboard?.writeText(window.location.origin + window.location.pathname + '?p=' + b.id)}
+                                                                        className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">העתק קישור</button>
+                                                                    <button onClick={() => resetBookPassword(b.id)}
+                                                                        className="text-xs font-bold text-slate-600 bg-white border px-3 py-2 rounded-lg">סיסמה חדשה</button>
+                                                                    <button onClick={() => deleteBook(b.id)}
+                                                                        className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg"><Icon name="trash-2" size={16} /></button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>
+                                    )}
 
-                                        {sourceState === 'partner-missing' && (
-                                            <p className="text-sm font-bold text-red-700 mb-3">
-                                                הקובץ {PRICEBOOK_URL} לא נמצא באתר. מוצג המחירון הרשמי במקומו.
-                                            </p>
-                                        )}
-                                        {sourceState === 'fallback' && (
-                                            <p className="text-sm font-bold text-red-700 mb-3">
-                                                לא נטען שום קובץ מחירון. מוצג המחירון המובנה בקוד.
-                                            </p>
-                                        )}
-
-                                        {isOverridden ? (
-                                            <div className="space-y-3">
-                                                <p className="text-sm font-bold text-amber-900">
-                                                    שינית את המחירון בדפדפן הזה. השינויים שמורים כאן בלבד — לא אצל מיישמים אחרים, ולא במכשירים אחרים שלך.
-                                                </p>
-                                                {officialChanged && (
-                                                    <p className="text-sm font-bold text-amber-900 bg-white/70 border border-amber-300 rounded-xl p-3">
-                                                        בינתיים פורסמה גרסה מעודכנת של המחירון. חזרה אליו תבטל את השינויים המקומיים.
-                                                    </p>
-                                                )}
-                                                <button onClick={revertToOfficial}
-                                                    className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-700">
-                                                    בטל שינויים וחזור למחירון מהקישור
-                                                </button>
-                                            </div>
+                                    {/* היסטוריית גרסאות */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-4">היסטוריית גרסאות ({versions.length})</h3>
+                                        {versions.length === 0 ? (
+                                            <p className="text-sm text-slate-400">עדיין אין גרסאות שמורות. כל שמירה יוצרת גרסה.</p>
                                         ) : (
-                                            <p className="text-sm font-bold text-slate-700">
-                                                אתה עובד על המחירון כפי שפורסם. כל שינוי שתעשה כאן יישמר בדפדפן הזה בלבד, עד שתחזור למחירון המקורי.
-                                            </p>
+                                            <div className="space-y-2 max-h-80 overflow-y-auto custom-scroll">
+                                                {versions.map(v => (
+                                                    <div key={v.id} className="flex flex-wrap items-center gap-3 bg-slate-50 border rounded-xl p-3">
+                                                        <div className="flex-grow min-w-[180px]">
+                                                            <div className="font-bold text-slate-800 text-sm">{v.note}</div>
+                                                            <div className="text-[11px] text-slate-500">גרסה {v.version} · {new Date(v.at).toLocaleString('he-IL')}</div>
+                                                        </div>
+                                                        <button onClick={() => restoreVersion(v.id)}
+                                                            className="text-xs font-bold text-slate-700 bg-white border px-4 py-2 rounded-lg hover:bg-slate-100">שחזר</button>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         )}
-
-                                        <div className="mt-5 pt-4 border-t border-slate-300/40 text-xs text-slate-600 leading-relaxed space-y-3">
-                                            <div>
-                                                <div className="font-black text-slate-700 mb-1">איך נותנים לכל מיישם מחירון משלו</div>
-                                                <div>1. פותחים כאן את המחירון הרצוי ולוחצים <span className="font-black">ייצא</span>.</div>
-                                                <div>2. משנים את שם הקובץ ל-<span className="font-black">pricing-שם.json</span> ומעלים אותו לתיקיית המערכת.</div>
-                                                <div>3. שולחים למיישם את הקישור האישי שלו:</div>
-                                                <div className="font-black text-slate-800 bg-white/80 border rounded-lg p-2 mt-1 break-all" dir="ltr">
-                                                    {(typeof window !== 'undefined' ? window.location.origin + window.location.pathname : '') + '?p=שם'}
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div className="font-black text-slate-700 mb-1">מה רואה מי שנכנס</div>
-                                                <div>נכנס עם קישור אישי — מקבל את המחירון שלו. נכנס בלי קישור — מקבל את המחירון הרשמי (pricing.json).</div>
-                                            </div>
-                                        </div>
                                     </div>
 
                                     {/* מיתוג ולוגו */}

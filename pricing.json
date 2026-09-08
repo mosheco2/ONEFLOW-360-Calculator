@@ -1,0 +1,163 @@
+{
+  "catalogVersion": 2,
+  "platformName": "ONEFLOW PRO BUSINESS",
+  "platformDescription": "תשתית הליבה: אחסון, אבטחה, ניהול הרשאות, גיבויים ועדכוני גרסה",
+  "platformPrice": 0,
+  "setupHourlyRate": 350,
+  "setupHoursPerDay": 9,
+  "exchangeRate": 3.7,
+  "minMonthlyCharge": 1200,
+  "minModules": 3,
+  "brandLogo": "logo.png",
+  "uiText": {
+    "modulesHeader": "רכיב א': בחירת מודולים",
+    "setupHeader": "רכיב ב': אומדן שעות הקמה",
+    "txHeader": "רכיב ג': חבילת טרנזקציות חודשית",
+    "usersHeader": "רכיב ד': משתמשי מערכת"
+  },
+  "moduleTiers": {
+    "basic": {
+      "label": "בייסיק",
+      "price": 400,
+      "tx": 8000
+    },
+    "premium": {
+      "label": "פרימיום",
+      "price": 600,
+      "tx": 12000
+    }
+  },
+  "modules": [
+    {
+      "id": "b2b",
+      "name": "מכירות B2B",
+      "icon": "smartphone",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 40,
+      "note": "אפליקציה בחנויות אפל ואנדרואיד ואתר לגישה דרך דפדפן, ממותגים"
+    },
+    {
+      "id": "agent",
+      "name": "מכירות סוכן",
+      "icon": "briefcase",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 32,
+      "note": "מסופון איש מכירות לניהול תיקי לקוחות"
+    },
+    {
+      "id": "picking",
+      "name": "ליקוט",
+      "icon": "layers",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 36,
+      "note": "ממשקי ליקוט סחורה"
+    },
+    {
+      "id": "inventory",
+      "name": "מלאי",
+      "icon": "package",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 45,
+      "note": "ממשקי ניהול מלאי והזמנת סחורה מספקים"
+    },
+    {
+      "id": "drivers",
+      "name": "נהגים",
+      "icon": "truck",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 18,
+      "note": "ממשק ניהול תהליכי שילוח"
+    },
+    {
+      "id": "marketing",
+      "name": "שיווק ודיוור",
+      "icon": "megaphone",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 24,
+      "note": "ניהול פעולות שיווק ודיוור מול גורמי פנים וחוץ"
+    },
+    {
+      "id": "bi",
+      "name": "דוחות ו-BI",
+      "icon": "bar-chart-3",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 45,
+      "note": "ממשקי מידע, דשבורדים ודוחות מותאמים לתפקיד ולצורך, בחתכי פעילות וזמן"
+    },
+    {
+      "id": "crm",
+      "name": "CRM",
+      "icon": "users",
+      "tier": "premium",
+      "price": 600,
+      "includedTx": 12000,
+      "setupHours": 60,
+      "note": "ניהול תהליכים עסקיים"
+    },
+    {
+      "id": "ai",
+      "name": "AI Assistant",
+      "icon": "sparkles",
+      "tier": "premium",
+      "price": 600,
+      "includedTx": 12000,
+      "setupHours": 40,
+      "note": "עוזר חכם, חיזוי והמלצות בזמן אמת"
+    },
+    {
+      "id": "erp",
+      "name": "אינטגרציה למערכות ERP",
+      "icon": "server",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 60,
+      "note": "ממשק דו-כיווני מול מערכת ה-ERP הארגונית: סנכרון פריטים, לקוחות, מסמכים ותנועות"
+    },
+    {
+      "id": "external",
+      "name": "אינטגרציה למקור חיצוני",
+      "icon": "globe",
+      "tier": "basic",
+      "price": 400,
+      "includedTx": 8000,
+      "setupHours": 40,
+      "note": "אתרים, מרכזי כוכב, נותני שירות, קופות וכו"
+    }
+  ],
+  "extraTxPack": {
+    "tx": 2500,
+    "price": 125
+  },
+  "txStations": [
+    0,
+    1,
+    2,
+    4,
+    8,
+    12,
+    20
+  ],
+  "users": {
+    "included": 15,
+    "packSize": 5,
+    "packPrice": 500
+  },
+  "customSections": [],
+  "publishedAt": "2026-09-08T16:28:53.725Z",
+  "label": "מחירון רשמי - ONEFLOW PRO BUSINESS"
+}

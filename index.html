@@ -129,7 +129,13 @@
         // תמחור נגזר מיחידת טרנזקציה אחת: 2,500 טרנזקציות = 125 ש"ח  =>  0.05 ש"ח לטרנזקציה
         // בייסיק:  8,000 טרנזקציות x 0.05 = 400 ש"ח
         // פרימיום: 12,000 טרנזקציות x 0.05 = 600 ש"ח
+        // מועלה בכל פעם שנוספים מודולים לקטלוג, כדי שיוזרמו גם למחירונים שכבר נשמרו
+        const CATALOG_VERSION = 2;
+        // המודולים שנוספו בכל גרסה. מוזרמים רק הם, כדי לא לשחזר מודולים שנמחקו ביודעין.
+        const CATALOG_ADDITIONS = { 2: ['erp', 'external'] };
+
         const DEFAULT_CONFIG = {
+            catalogVersion: CATALOG_VERSION,
             platformName: 'ONEFLOW PRO BUSINESS',
             platformDescription: 'תשתית הליבה: אחסון, אבטחה, ניהול הרשאות, גיבויים ועדכוני גרסה',
             platformPrice: 0,
@@ -167,6 +173,8 @@
                 { id: 'bi',        name: 'דוחות ו-BI',     icon: 'bar-chart-3', tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 45, note: 'ממשקי מידע, דשבורדים ודוחות מותאמים לתפקיד ולצורך, בחתכי פעילות וזמן' },
                 { id: 'crm',       name: 'CRM',            icon: 'users',       tier: 'premium', price: 600, includedTx: 12000, setupHours: 60, note: 'ניהול תהליכים עסקיים' },
                 { id: 'ai',        name: 'AI Assistant',   icon: 'sparkles',    tier: 'premium', price: 600, includedTx: 12000, setupHours: 40, note: 'עוזר חכם, חיזוי והמלצות בזמן אמת' },
+                { id: 'erp',       name: 'אינטגרציה למערכות ERP', icon: 'server', tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 60, note: 'ממשק דו-כיווני מול מערכת ה-ERP הארגונית: סנכרון פריטים, לקוחות, מסמכים ותנועות' },
+                { id: 'external',  name: 'אינטגרציה למקור חיצוני', icon: 'globe', tier: 'basic',   price: 400, includedTx: 8000,  setupHours: 40, note: 'אתרים, מרכזי כוכב, נותני שירות, קופות וכו' },
             ],
 
             // חבילת טרנזקציות נוספת - יחידת הבסיס לסולם התחנות
@@ -238,6 +246,21 @@
                     note: m.note || ''
                 };
             });
+
+            // הזרמת מודולים שנוספו לקטלוג אל מחירונים שנשמרו בגרסה קודמת.
+            // מתבצע פעם אחת בלבד לכל גרסת קטלוג, כדי לא לשחזר מודולים שנמחקו ביודעין.
+            const savedVersion = Number(raw.catalogVersion) || 0;
+            if (savedVersion < CATALOG_VERSION) {
+                const existing = new Set(c.modules.map(m => m.id));
+                for (let v = savedVersion + 1; v <= CATALOG_VERSION; v++) {
+                    (CATALOG_ADDITIONS[v] || []).forEach(id => {
+                        if (existing.has(id)) return;
+                        const dm = DEFAULT_CONFIG.modules.find(m => m.id === id);
+                        if (dm) { c.modules.push(JSON.parse(JSON.stringify(dm))); existing.add(id); }
+                    });
+                }
+            }
+            c.catalogVersion = CATALOG_VERSION;
 
             // ניקוי שדות שאינם בשימוש במודל החדש
             delete c.publicUserPackages;

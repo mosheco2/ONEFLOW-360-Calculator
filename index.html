@@ -138,12 +138,15 @@
             setupHoursPerDay: 9,
             exchangeRate: 3.7,
 
+            // מינימום מודולים לחיוב (חבילת בסיס + 2 מודולים)
+            minModules: 2,
+
             brandLogo: 'logo.png',
 
             uiText: {
                 modulesHeader: "רכיב א': בחירת מודולים",
                 setupHeader:   "רכיב ב': אומדן שעות הקמה",
-                txHeader:      "רכיב ג': חבילת טרנזקציות",
+                txHeader:      "רכיב ג': חבילת טרנזקציות חודשית",
                 usersHeader:   "רכיב ד': משתמשי מערכת",
             },
 
@@ -211,6 +214,7 @@
             c.extraTxPack = { ...DEFAULT_CONFIG.extraTxPack, ...(raw.extraTxPack || {}) };
             c.users       = { ...DEFAULT_CONFIG.users,       ...(raw.users || {}) };
             if (!Array.isArray(c.txStations) || !c.txStations.length) c.txStations = DEFAULT_CONFIG.txStations;
+            c.minModules = Number(raw.minModules !== undefined ? raw.minModules : DEFAULT_CONFIG.minModules) || 0;
             if (!Array.isArray(c.customSections)) c.customSections = [];
 
             c.modules = (Array.isArray(raw.modules) ? raw.modules : DEFAULT_CONFIG.modules).map(m => {
@@ -324,8 +328,8 @@
             // --- לוגיקת חישוב ---
             const totals = useMemo(() => {
                 const details = [];
-                let modulesMRR = 0;
-                let includedTx = 0;
+                let modulesMRR = 0;          // תמיכה, שירות ותחזוקה - חודשי
+                let setupBonusTx = 0;        // מענק טרנזקציות חד-פעמי מהמודולים
                 let setupHours = 0;
 
                 selectedModules.forEach(id => {
@@ -335,7 +339,7 @@
                         ? (Number(hoursOverride[id]) || 0)
                         : (Number(m.setupHours) || 0);
                     modulesMRR += Number(m.price) || 0;
-                    includedTx += Number(m.includedTx) || 0;
+                    setupBonusTx += Number(m.includedTx) || 0;
                     setupHours += hours;
                     details.push({ ...m, hours });
                 });
@@ -343,9 +347,10 @@
                 // טרנזקציות
                 const packTx    = Number(config.extraTxPack.tx) || 0;
                 const packPrice = Number(config.extraTxPack.price) || 0;
-                const extraTx     = extraTxPacks * packTx;
+                // המכסה החודשית מורכבת אך ורק מחבילות שנרכשו.
+                // מכסת המודולים היא מענק הקמה חד-פעמי ואינה נספרת כאן.
+                const monthlyTx   = extraTxPacks * packTx;
                 const extraTxCost = extraTxPacks * packPrice;
-                const totalTx     = includedTx + extraTx;
                 const unitPrice   = packTx > 0 ? packPrice / packTx : 0;
 
                 // משתמשים
@@ -381,8 +386,10 @@
                     ? setupHours / Number(config.setupHoursPerDay) : 0;
 
                 return {
-                    details, modulesMRR, includedTx, setupHours, setupDays,
-                    packTx, packPrice, extraTx, extraTxCost, totalTx, unitPrice,
+                    details, modulesMRR, setupBonusTx, setupHours, setupDays,
+                    packTx, packPrice, monthlyTx, extraTxCost, unitPrice,
+                    moduleCount: details.length,
+                    belowMinimum: details.length > 0 && details.length < (Number(config.minModules) || 0),
                     usersIncluded, userPackSize, userPackPrice, extraUsersCost, totalUsers,
                     addonsMRR, addonsSetup, mrrBreakdown, setupBreakdown, customItems,
                     platformPrice, totalMRR, setupLaborCost, totalSetup
@@ -566,9 +573,18 @@
                         <span className={`text-sm font-black leading-tight ${isSelected ? 'text-slate-900' : 'text-slate-700'}`}>{m.name}</span>
                         <span className={`mt-2 text-[10px] font-black px-2 py-0.5 rounded-full ${t.chip}`}>{t.label}</span>
                         {m.note && <span className="mt-2 text-[11px] text-slate-400 leading-snug line-clamp-3">{m.note}</span>}
-                        <div className="mt-auto pt-3 w-full border-t border-dashed border-slate-200 mt-3">
-                            <div className="font-black text-slate-900">{money(m.price)}<span className="text-[10px] font-normal text-slate-400"> /חודש</span></div>
-                            <div className="text-[10px] text-slate-500 font-bold">{fmt(m.includedTx)} טרנזקציות כלולות</div>
+                        <div className="mt-auto pt-3 w-full border-t border-dashed border-slate-200 mt-3 space-y-2">
+                            <div>
+                                <div className="font-black text-slate-900">{money(m.price)}<span className="text-[10px] font-normal text-slate-400"> /חודש</span></div>
+                                <div className="text-[10px] text-slate-400 font-bold leading-tight">תמיכה, שירות ותחזוקה</div>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] font-black text-orange-600">
+                                <Icon name="hammer" size={12} /> {fmt(m.setupHours)} שעות הקמה
+                            </div>
+                            <div className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-md px-2 py-1 leading-tight">
+                                מענק הקמה: {fmt(m.includedTx)} טרנזקציות ללא עלות
+                                <span className="block text-[9px] font-normal text-emerald-600">חד-פעמי, לא חודשי</span>
+                            </div>
                         </div>
                     </button>
                 );
@@ -655,12 +671,12 @@
                                     <h3 className="text-lg font-bold flex items-center gap-2 text-slate-700">
                                         <Icon name="database" className="text-blue-500" /> {config.uiText.modulesHeader}
                                     </h3>
-                                    <div className="flex gap-2 text-[11px] font-black">
+                                    <div className="flex flex-wrap gap-2 text-[11px] font-black">
                                         <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700">
-                                            {config.moduleTiers.basic.label} · {money(config.moduleTiers.basic.price)} · {fmt(config.moduleTiers.basic.tx)} טר'
+                                            {config.moduleTiers.basic.label} · {money(config.moduleTiers.basic.price)} תחזוקה · מענק {fmt(config.moduleTiers.basic.tx)} טר'
                                         </span>
                                         <span className="px-3 py-1 rounded-full bg-violet-100 text-violet-700">
-                                            {config.moduleTiers.premium.label} · {money(config.moduleTiers.premium.price)} · {fmt(config.moduleTiers.premium.tx)} טר'
+                                            {config.moduleTiers.premium.label} · {money(config.moduleTiers.premium.price)} תחזוקה · מענק {fmt(config.moduleTiers.premium.tx)} טר'
                                         </span>
                                     </div>
                                 </div>
@@ -669,9 +685,17 @@
                                         <ModuleCard key={m.id} m={m} isSelected={selectedModules.includes(m.id)} />
                                     ))}
                                 </div>
-                                <p className="text-xs text-slate-400 mt-4 flex items-center gap-1.5">
-                                    <Icon name="check-circle-2" size={14} /> אין הגבלה על מספר המודולים — הלקוח בוחר את מה שרלוונטי לו.
-                                </p>
+                                <div className="mt-4 space-y-2">
+                                    <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                                        <Icon name="check-circle-2" size={14} /> אין תקרה למספר המודולים. החיוב הוא חבילת הבסיס בתוספת {config.minModules} מודולים לפחות.
+                                    </p>
+                                    {totals.belowMinimum && (
+                                        <div className="flex items-start gap-2 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                                            <Icon name="shield" size={16} />
+                                            <span>נבחר {totals.moduleCount} מודול בלבד. המינימום לחיוב הוא {config.minModules} מודולים — האומדן מוצג, אך אינו עומד בתנאי החבילה.</span>
+                                        </div>
+                                    )}
+                                </div>
                             </section>
 
                             {/* 2. Setup hours */}
@@ -722,23 +746,21 @@
                                     <Icon name="activity" className="text-blue-500" /> {config.uiText.txHeader}
                                 </h3>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-                                    <div className="bg-slate-50 p-4 rounded-2xl border">
-                                        <div className="text-[11px] font-bold text-slate-500">כלול במודולים שנבחרו</div>
-                                        <div className="text-2xl font-black text-slate-800 mt-1">{fmt(totals.includedTx)}</div>
-                                    </div>
-                                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
-                                        <div className="text-[11px] font-bold text-blue-600">תוספת שנרכשה</div>
-                                        <div className="text-2xl font-black text-blue-800 mt-1">+{fmt(totals.extraTx)}</div>
-                                    </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
                                     <div className="bg-slate-900 text-white p-4 rounded-2xl">
-                                        <div className="text-[11px] font-bold text-blue-300">סה"כ מכסה חודשית</div>
-                                        <div className="text-2xl font-black mt-1">{fmt(totals.totalTx)}</div>
+                                        <div className="text-[11px] font-bold text-blue-300">מכסה חודשית נרכשת</div>
+                                        <div className="text-2xl font-black mt-1">{fmt(totals.monthlyTx)}</div>
+                                        <div className="text-[10px] text-slate-400 font-bold mt-1">{money(totals.extraTxCost)} לחודש</div>
+                                    </div>
+                                    <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200">
+                                        <div className="text-[11px] font-bold text-emerald-700">מענק הקמה מהמודולים</div>
+                                        <div className="text-2xl font-black text-emerald-800 mt-1">{fmt(totals.setupBonusTx)}</div>
+                                        <div className="text-[10px] text-emerald-600 font-bold mt-1">חד-פעמי, ללא עלות — אינו חלק מהמכסה החודשית</div>
                                     </div>
                                 </div>
 
                                 <div className="text-[11px] font-bold text-slate-500 mb-2">
-                                    תחנות תוספת — כל חבילה: {fmt(totals.packTx)} טרנזקציות ב-{money(totals.packPrice)}
+                                    תחנות חיוב חודשי — כל חבילה: {fmt(totals.packTx)} טרנזקציות ב-{money(totals.packPrice)}
                                 </div>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
                                     {config.txStations.map(packs => {
@@ -746,7 +768,7 @@
                                         return (
                                             <button key={packs} onClick={() => setExtraTxPacks(packs)}
                                                 className={`p-3 rounded-xl border-2 text-right transition-all ${active ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-100 hover:border-slate-200'}`}>
-                                                <div className="text-[10px] font-bold text-slate-400">{packs === 0 ? 'ללא תוספת' : packs + ' חבילות'}</div>
+                                                <div className="text-[10px] font-bold text-slate-400">{packs === 0 ? 'ללא חבילה' : packs + ' חבילות'}</div>
                                                 <div className="font-black text-slate-800 text-sm">+{fmt(packs * totals.packTx)}</div>
                                                 <div className="text-[11px] font-black text-blue-600">{money(packs * totals.packPrice)}</div>
                                             </button>
@@ -827,10 +849,10 @@
                                             <div className="flex justify-between text-slate-600"><span>פלטפורמה</span><span>{money(totals.platformPrice)}</span></div>
                                         )}
                                         <div className="flex justify-between font-bold text-slate-700">
-                                            <span>מודולים ({totals.details.length})</span><span>{money(totals.modulesMRR)}</span>
+                                            <span>תמיכה ותחזוקה — {totals.moduleCount} מודולים</span><span>{money(totals.modulesMRR)}</span>
                                         </div>
                                         <div className="flex justify-between text-slate-600">
-                                            <span>תוספת טרנזקציות ({fmt(totals.extraTx)})</span><span>{money(totals.extraTxCost)}</span>
+                                            <span>חבילת טרנזקציות ({fmt(totals.monthlyTx)})</span><span>{money(totals.extraTxCost)}</span>
                                         </div>
                                         <div className="flex justify-between text-slate-600">
                                             <span>משתמשים נוספים ({fmt(extraUserPacks * totals.userPackSize)})</span><span>{money(totals.extraUsersCost)}</span>
@@ -850,8 +872,13 @@
                                         </div>
                                         <div className="text-left text-xs font-bold text-slate-400">{usd(totals.totalMRR, config.exchangeRate)}</div>
                                         <div className="text-left text-[11px] font-bold text-slate-400 mt-1">
-                                            {fmt(totals.totalTx)} טרנזקציות · {fmt(totals.totalUsers)} משתמשים
+                                            {fmt(totals.monthlyTx)} טרנזקציות לחודש · {fmt(totals.totalUsers)} משתמשים
                                         </div>
+                                        {totals.belowMinimum && (
+                                            <div className="mt-3 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                                                מתחת למינימום החיוב ({config.minModules} מודולים)
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* SETUP */}
@@ -876,6 +903,12 @@
                                             <Icon name="clock" size={16} />
                                             <span>{fmt(totals.setupHours)} שעות × {money(config.setupHourlyRate)} (≈ {totals.setupDays.toFixed(1)} ימים)</span>
                                         </div>
+                                        {totals.setupBonusTx > 0 && (
+                                            <div className="flex items-center gap-2 text-xs font-black text-emerald-800 bg-emerald-50 p-2 rounded-lg mt-2">
+                                                <Icon name="coins" size={16} />
+                                                <span>מענק הקמה: {fmt(totals.setupBonusTx)} טרנזקציות ללא עלות</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <button onClick={handlePrint}
@@ -979,11 +1012,19 @@
                                                 <input value={config.platformName} onChange={e => updateConfigValue(['platformName'], e.target.value)}
                                                     className="w-full p-3 border rounded-xl bg-white font-bold" />
                                             </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מחיר פלטפורמה חודשי (₪)</label>
-                                                <input type="number" value={config.platformPrice}
-                                                    onChange={e => updateConfigValue(['platformPrice'], Number(e.target.value))}
-                                                    className="w-full p-3 border rounded-xl bg-white font-black" />
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">מחיר פלטפורמה חודשי (₪)</label>
+                                                    <input type="number" value={config.platformPrice}
+                                                        onChange={e => updateConfigValue(['platformPrice'], Number(e.target.value))}
+                                                        className="w-full p-3 border rounded-xl bg-white font-black" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">מינימום מודולים לחיוב</label>
+                                                    <input type="number" min="0" value={config.minModules}
+                                                        onChange={e => updateConfigValue(['minModules'], Math.max(0, Number(e.target.value) || 0))}
+                                                        className="w-full p-3 border rounded-xl bg-white font-black" />
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="mb-6">
@@ -1031,22 +1072,20 @@
                                                             className={`text-lg font-black bg-white border rounded-xl w-full p-2.5 mb-4 ${isPrem ? 'text-violet-800' : 'text-blue-800'}`} />
                                                         <div className="grid grid-cols-2 gap-3">
                                                             <div>
-                                                                <label className="text-[11px] font-bold text-slate-500 mb-1 block">מחיר חודשי (₪)</label>
+                                                                <label className="text-[11px] font-bold text-slate-500 mb-1 block">תמיכה ותחזוקה (₪/חודש)</label>
                                                                 <input type="number" value={config.moduleTiers[tier].price}
                                                                     onChange={e => updateTierDef(tier, 'price', Number(e.target.value))}
                                                                     className="w-full p-2.5 border rounded-lg bg-white font-black" />
                                                             </div>
                                                             <div>
-                                                                <label className="text-[11px] font-bold text-slate-500 mb-1 block">טרנזקציות כלולות</label>
+                                                                <label className="text-[11px] font-bold text-slate-500 mb-1 block">מענק הקמה (טרנזקציות)</label>
                                                                 <input type="number" value={config.moduleTiers[tier].tx}
                                                                     onChange={e => updateTierDef(tier, 'tx', Number(e.target.value))}
                                                                     className="w-full p-2.5 border rounded-lg bg-white font-black" />
                                                             </div>
                                                         </div>
                                                         <div className="text-[11px] font-bold text-slate-500 mt-3">
-                                                            מחיר לטרנזקציה: {config.moduleTiers[tier].tx > 0
-                                                                ? (config.moduleTiers[tier].price / config.moduleTiers[tier].tx).toFixed(3) + ' ₪'
-                                                                : '—'}
+                                                            מענק ההקמה ניתן פעם אחת וללא עלות, ואינו נספר במכסה החודשית.
                                                         </div>
                                                     </div>
                                                 );
@@ -1095,13 +1134,13 @@
                                                                 </select>
                                                             </div>
                                                             <div>
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">₪ /חודש</label>
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">תחזוקה ₪/חודש</label>
                                                                 <input type="number" value={m.price}
                                                                     onChange={e => updateConfigValue(['modules', idx, 'price'], Number(e.target.value))}
                                                                     className="w-24 p-2.5 border rounded-lg bg-white font-black text-center" />
                                                             </div>
                                                             <div>
-                                                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">טרנזקציות</label>
+                                                                <label className="text-[10px] font-bold text-emerald-600 uppercase block mb-1">מענק טרנזקציות</label>
                                                                 <input type="number" value={m.includedTx}
                                                                     onChange={e => updateConfigValue(['modules', idx, 'includedTx'], Number(e.target.value))}
                                                                     className="w-28 p-2.5 border rounded-lg bg-white font-black text-center" />
@@ -1155,7 +1194,7 @@
                                     {/* טרנזקציות ומשתמשים */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="bg-white p-6 rounded-3xl border border-slate-200">
-                                            <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">חבילת טרנזקציות נוספת</h3>
+                                            <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">חבילת טרנזקציות חודשית</h3>
                                             <div className="grid grid-cols-2 gap-3 mb-4">
                                                 <div>
                                                     <label className="text-[11px] font-bold text-slate-500 mb-1 block">טרנזקציות בחבילה</label>
@@ -1315,11 +1354,11 @@
                                 <table>
                                     <thead>
                                         <tr>
-                                            <th style={{ width: '32%' }}>מודול</th>
-                                            <th style={{ width: '12%', textAlign: 'center' }}>רמה</th>
-                                            <th style={{ width: '18%', textAlign: 'center' }}>טרנזקציות כלולות</th>
-                                            <th style={{ width: '13%', textAlign: 'center' }}>שעות הקמה</th>
-                                            <th style={{ textAlign: 'center' }}>חודשי (₪)</th>
+                                            <th style={{ width: '30%' }}>מודול</th>
+                                            <th style={{ width: '11%', textAlign: 'center' }}>רמה</th>
+                                            <th style={{ width: '12%', textAlign: 'center' }}>שעות הקמה</th>
+                                            <th style={{ width: '20%', textAlign: 'center' }}>מענק טרנזקציות (חד-פעמי)</th>
+                                            <th style={{ textAlign: 'center' }}>תמיכה ותחזוקה (₪/חודש)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1334,19 +1373,24 @@
                                                         {m.tier === 'premium' ? config.moduleTiers.premium.label : config.moduleTiers.basic.label}
                                                     </span>
                                                 </td>
-                                                <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{fmt(m.includedTx)}</td>
                                                 <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#ea580c' }}>{fmt(m.hours)}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#047857' }}>{fmt(m.includedTx)}</td>
                                                 <td style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '11pt' }}>{money(m.price)}</td>
                                             </tr>
                                         ))}
                                         <tr style={{ backgroundColor: '#f1f5f9', borderTop: '2px solid #cbd5e1' }}>
-                                            <td colSpan="2" style={{ fontWeight: 'bold', fontSize: '11pt' }}>סה"כ מודולים:</td>
-                                            <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{fmt(totals.includedTx)}</td>
+                                            <td colSpan="2" style={{ fontWeight: 'bold', fontSize: '11pt' }}>סה"כ {totals.moduleCount} מודולים:</td>
                                             <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#c2410c' }}>{fmt(totals.setupHours)}</td>
+                                            <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#047857' }}>{fmt(totals.setupBonusTx)}</td>
                                             <td style={{ textAlign: 'center', fontWeight: 'bold', color: '#1e3a8a', fontSize: '12pt' }}>{money(totals.modulesMRR)}</td>
                                         </tr>
                                     </tbody>
                                 </table>
+                                <p style={{ fontSize: '9pt', color: '#64748b', marginTop: '8px' }}>
+                                    העלות החודשית שלצד כל מודול היא דמי תמיכה, שירות ותחזוקה. מכסת הטרנזקציות שלצדו היא
+                                    מענק הקמה חד-פעמי ללא עלות, ואינה מכסה חודשית מתחדשת.
+                                    {config.minModules > 0 && ' החיוב מותנה בחבילת הבסיס בתוספת ' + config.minModules + ' מודולים לפחות.'}
+                                </p>
                             </div>
 
                             <div className="avoid-break">
@@ -1368,11 +1412,11 @@
                                             <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{money(totals.platformPrice)}</td>
                                         </tr>
                                         <tr>
-                                            <td style={{ fontWeight: 'bold' }}>תוספת חבילות טרנזקציות</td>
+                                            <td style={{ fontWeight: 'bold' }}>חבילת טרנזקציות חודשית</td>
                                             <td>
-                                                {extraTxPacks} חבילות × {fmt(totals.packTx)} = {fmt(totals.extraTx)} טרנזקציות
-                                                <div style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>
-                                                    סה"כ מכסה חודשית כולל המודולים: {fmt(totals.totalTx)} טרנזקציות
+                                                {extraTxPacks} חבילות × {fmt(totals.packTx)} = {fmt(totals.monthlyTx)} טרנזקציות לחודש
+                                                <div style={{ fontSize: '9pt', color: '#047857', marginTop: '4px' }}>
+                                                    בנוסף: מענק הקמה חד-פעמי של {fmt(totals.setupBonusTx)} טרנזקציות ללא עלות
                                                 </div>
                                             </td>
                                             <td style={{ textAlign: 'center' }}><span className="badge">חודשי</span></td>
@@ -1413,7 +1457,7 @@
                                     <div>
                                         <div style={{ fontSize: '14pt', fontWeight: 'bold' }}>סה"כ חיוב חודשי קבוע (MRR):</div>
                                         <div style={{ fontSize: '10pt', color: '#64748b', marginTop: '5px' }}>
-                                            {fmt(totals.totalTx)} טרנזקציות · {fmt(totals.totalUsers)} משתמשים · {totals.details.length} מודולים
+                                            {fmt(totals.monthlyTx)} טרנזקציות לחודש · {fmt(totals.totalUsers)} משתמשים · {totals.moduleCount} מודולים
                                         </div>
                                     </div>
                                     <div style={{ textAlign: 'left' }}>
@@ -1428,6 +1472,11 @@
                                         <div style={{ fontSize: '11pt', color: '#ea580c', marginTop: '5px' }}>
                                             {fmt(totals.setupHours)} שעות × {money(config.setupHourlyRate)} לשעה (≈ {totals.setupDays.toFixed(1)} ימי עבודה)
                                         </div>
+                                        {totals.setupBonusTx > 0 && (
+                                            <div style={{ fontSize: '11pt', color: '#047857', marginTop: '5px', fontWeight: 'bold' }}>
+                                                כולל מענק הקמה: {fmt(totals.setupBonusTx)} טרנזקציות ללא עלות
+                                            </div>
+                                        )}
                                     </div>
                                     <div style={{ textAlign: 'left' }}>
                                         <div style={{ fontSize: '24pt', fontWeight: '900', color: '#c2410c', lineHeight: 1 }}>{money(totals.totalSetup)}</div>

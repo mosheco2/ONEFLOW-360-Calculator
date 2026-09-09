@@ -121,7 +121,12 @@ const proposalOut = (r) => ({
     selection: r.selection, totals: r.totals, status: r.status,
     retentionDays: r.retention_days, retentionExpiresAt: r.retention_expires_at,
     createdAt: r.created_at, updatedAt: r.updated_at,
-    pricebookLabel: r.pricebook_label, implementerName: r.implementer_name
+    pricebookLabel: r.pricebook_label, implementerName: r.implementer_name,
+    // האומדן שממנו הצעה זו הומרה - נשלף מטבלת quotes אם עדיין קיים (ה-JOIN חיצוני, לכן ייתכן null)
+    sourceQuote: r.source_quote_id ? {
+        id: r.source_quote_id, clientName: r.sq_client_name, note: r.sq_note,
+        totals: r.sq_totals, createdAt: r.sq_created_at, updatedAt: r.sq_updated_at
+    } : null
 });
 
 // ---------- הניתוב ----------
@@ -423,6 +428,15 @@ async function route(req, res, url, who) {
     // ===== הצעות מחיר =====
     const PROPOSAL_STATUSES = ['open','approved','won','lost','expired'];
 
+    // שאילתת בסיס משותפת לכל שליפת הצעות מחיר, כולל האומדן שממנו הן הומרו (אם יש)
+    const PROPOSAL_SELECT_SQL = `
+        select pr.*, p.label as pricebook_label, p.implementer_name,
+               q.client_name as sq_client_name, q.note as sq_note,
+               q.totals as sq_totals, q.created_at as sq_created_at, q.updated_at as sq_updated_at
+        from proposals pr
+        join pricebooks p on p.id = pr.pricebook_id
+        left join quotes q on q.id = pr.source_quote_id`;
+
     // בודק אם ליד תפוס: הצעה פתוחה/מאושרת של מיישם אחר, בתוך חלון השמירה, לאותו שם לקוח
     const findLeadConflict = async (proposalId, pricebookId, clientName) => {
         const { rows } = await pool.query(`
@@ -445,14 +459,12 @@ async function route(req, res, url, who) {
         let rows;
         if (who.role === 'admin') {
             rows = (await pool.query(`
-                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
-                join pricebooks p on p.id=pr.pricebook_id
+                ${PROPOSAL_SELECT_SQL}
                 ${filter ? 'where pr.pricebook_id=$1' : ''}
                 order by pr.updated_at desc limit 1000`, filter ? [filter] : [])).rows;
         } else if (who.role === 'implementer') {
             rows = (await pool.query(`
-                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
-                join pricebooks p on p.id=pr.pricebook_id
+                ${PROPOSAL_SELECT_SQL}
                 where pr.pricebook_id=$1 order by pr.updated_at desc limit 1000`, [who.pricebookId])).rows;
         } else return send(res, 403, { error: 'forbidden' });
         return send(res, 200, rows.map(proposalOut));
@@ -469,8 +481,8 @@ async function route(req, res, url, who) {
             returning *`, [seg[1], d.pricebookId]);
         if (!rows.length) return send(res, 404);
         const full = await pool.query(`
-            select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
-            join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [seg[1]]);
+            ${PROPOSAL_SELECT_SQL}
+            where pr.id=$1`, [seg[1]]);
         return send(res, 200, proposalOut(full.rows[0]));
     }
 
@@ -486,8 +498,8 @@ async function route(req, res, url, who) {
             where id=$1 returning *`, [seg[1], days]);
         if (!rows.length) return send(res, 404);
         const full = await pool.query(`
-            select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
-            join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [seg[1]]);
+            ${PROPOSAL_SELECT_SQL}
+            where pr.id=$1`, [seg[1]]);
         return send(res, 200, proposalOut(full.rows[0]));
     }
 
@@ -499,8 +511,8 @@ async function route(req, res, url, who) {
         };
         if (m === 'GET') {
             const { rows } = await pool.query(`
-                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
-                join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [id]);
+                ${PROPOSAL_SELECT_SQL}
+                where pr.id=$1`, [id]);
             if (!rows.length) return send(res, 404);
             if (who.role !== 'admin' && !(who.role === 'implementer' && who.pricebookId === rows[0].pricebook_id))
                 return send(res, 403, { error: 'forbidden' });
@@ -541,8 +553,8 @@ async function route(req, res, url, who) {
                  d.introText || null, d.termsText || null, d.closingText || null,
                  d.selection || {}, d.totals || {}, status, retentionDays]);
             const full = await pool.query(`
-                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
-                join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [rows[0].id]);
+                ${PROPOSAL_SELECT_SQL}
+                where pr.id=$1`, [rows[0].id]);
             const out = proposalOut(full.rows[0]);
             // מתריע על התנגשות ליד רק לאחר שהשמירה כבר הצליחה, לא חוסם אותה
             if (isNew) {

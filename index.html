@@ -2617,6 +2617,9 @@
                                                                 <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${retentionClass}`}>
                                                                     <Icon name="clock" size={10} /> {daysLeft > 0 ? ('נותרו ' + daysLeft + ' ימי שמירה') : 'תוקף השמירה פג'}
                                                                 </span>
+                                                                <span className="text-[10px] font-bold text-slate-400">
+                                                                    נפתח בתאריך {new Date(p.createdAt).toLocaleDateString('he-IL')}
+                                                                </span>
                                                             </div>
                                                             {isMasterBook && (
                                                                 <div className="text-[11px] text-slate-500 mt-0.5">{p.pricebookLabel} ({p.implementerName || p.pricebookId})</div>

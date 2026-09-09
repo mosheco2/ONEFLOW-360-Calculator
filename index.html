@@ -2043,6 +2043,22 @@
                 window.print();
             };
 
+            // --- הפקת PDF להצעת מחיר שמורה ---
+            // אותו אזור הדפסה (#print-area) משמש גם לאומדן החי וגם להצעת מחיר שמורה -
+            // printingProposal קובע איזה משני התכנים יוצג בזמן ההדפסה.
+            const [printingProposal, setPrintingProposal] = useState(null);
+            useEffect(() => {
+                if (!printingProposal) return;
+                const t = setTimeout(() => window.print(), 150);
+                return () => clearTimeout(t);
+            }, [printingProposal]);
+            useEffect(() => {
+                const onAfterPrint = () => setPrintingProposal(null);
+                window.addEventListener('afterprint', onAfterPrint);
+                return () => window.removeEventListener('afterprint', onAfterPrint);
+            }, []);
+            const printProposal = (p) => setPrintingProposal(p);
+
             const toggleModule = (id) => {
                 setSelectedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
             };
@@ -2625,6 +2641,10 @@
                                                             <button onClick={() => extendProposalRetention(p)}
                                                                 className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg whitespace-nowrap">הארך שמירה</button>
                                                         )}
+                                                        <button onClick={() => printProposal(p)}
+                                                            className="text-xs font-bold text-slate-700 bg-white border px-3 py-2 rounded-lg hover:bg-slate-50 whitespace-nowrap flex items-center gap-1">
+                                                            <Icon name="file-down" size={14} /> הפק PDF
+                                                        </button>
                                                         <button onClick={() => openProposalForEdit(p)}
                                                             className="text-xs font-bold text-blue-600 bg-white border border-blue-200 px-3 py-2 rounded-lg hover:bg-blue-50">ערוך</button>
                                                         <button onClick={() => duplicateProposalDraft(p)}
@@ -3229,13 +3249,16 @@
                                                 {PROPOSAL_STATUSES.map(s => <option key={s} value={s}>{PROPOSAL_STATUS_LABELS[s]}</option>)}
                                             </select>
                                         </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-600 mb-1 block">ימי שמירת ליד</label>
-                                            <input type="number" min={1} value={proposalEditor.retentionDays}
-                                                onChange={e => setProposalEditor({ ...proposalEditor, retentionDays: Math.max(1, Number(e.target.value) || 1) })}
-                                                disabled={!!proposalEditor.id}
-                                                className="w-24 p-2.5 border rounded-xl bg-white text-sm font-bold disabled:opacity-50" />
-                                        </div>
+                                        {/* ימי השמירה על הליד הם החלטה של המנהל בלבד - הגנה בין מיישמים, לא שיקול של המיישם עצמו */}
+                                        {isMasterBook && (
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-600 mb-1 block">ימי שמירת ליד</label>
+                                                <input type="number" min={1} value={proposalEditor.retentionDays}
+                                                    onChange={e => setProposalEditor({ ...proposalEditor, retentionDays: Math.max(1, Number(e.target.value) || 1) })}
+                                                    disabled={!!proposalEditor.id}
+                                                    className="w-24 p-2.5 border rounded-xl bg-white text-sm font-bold disabled:opacity-50" />
+                                            </div>
+                                        )}
                                     </div>
 
                                     {proposalError && <p className="text-sm font-bold text-red-600">{proposalError}</p>}
@@ -3665,17 +3688,20 @@
                                         <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6 flex items-center gap-2">
                                             <Icon name="image" className="text-blue-600" /> מיתוג ולוגו
                                         </h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="bg-slate-50 p-5 rounded-2xl border">
-                                                <h4 className="font-bold text-slate-700 mb-3">לוגו המוצר (קבוע)</h4>
-                                                <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
-                                                    <BrandLogo src={config.brandLogo} className="max-h-16 object-contain" />
+                                        <div className={`grid grid-cols-1 ${isMasterBook ? 'md:grid-cols-2' : ''} gap-6`}>
+                                            {/* לוגו המערכת קבוע ומשותף לכל המיישמים - רק המנהל אמור לגעת בו */}
+                                            {isMasterBook && (
+                                                <div className="bg-slate-50 p-5 rounded-2xl border">
+                                                    <h4 className="font-bold text-slate-700 mb-3">לוגו המוצר (קבוע)</h4>
+                                                    <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
+                                                        <BrandLogo src={config.brandLogo} className="max-h-16 object-contain" />
+                                                    </div>
+                                                    <label className="text-xs font-bold text-slate-500 mb-1 block">שם קובץ הלוגו (בתיקיית המערכת)</label>
+                                                    <input value={config.brandLogo}
+                                                        onChange={e => updateConfigValue(['brandLogo'], e.target.value)}
+                                                        className="w-full p-3 border rounded-xl bg-white font-bold" />
                                                 </div>
-                                                <label className="text-xs font-bold text-slate-500 mb-1 block">שם קובץ הלוגו (בתיקיית המערכת)</label>
-                                                <input value={config.brandLogo}
-                                                    onChange={e => updateConfigValue(['brandLogo'], e.target.value)}
-                                                    className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                            </div>
+                                            )}
 
                                             <div className="bg-blue-50 p-5 rounded-2xl border border-blue-200">
                                                 <h4 className="font-bold text-blue-800 mb-3">הלוגו שלך (המיישם)</h4>
@@ -4124,6 +4150,142 @@
 
                     {/* --- אזור הדפסה (PDF) --- */}
                     <div id="print-area">
+                        {printingProposal ? (
+                        <div className="print-container">
+                            {(() => { const pr = printingProposal; const daysLeft = retentionDaysLeft(pr.retentionExpiresAt); return (<>
+                            {/* כותרת ולוגואים */}
+                            <div className="avoid-break" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #2563eb', paddingBottom: '20px', marginBottom: '30px' }}>
+                                <div>
+                                    <BrandLogo src={config.brandLogo} style={{ height: '45px', marginBottom: '15px', objectFit: 'contain' }} />
+                                    <h1>הצעת מחיר</h1>
+                                    <div className="print-sub-header">
+                                        <p><strong>תאריך הפקה:</strong> {new Date().toLocaleDateString('he-IL')}</p>
+                                        <p><strong>מוגשת על ידי:</strong> {pr.implementerName || brand.name || (book && book.implementerName) || 'לא צוין'}</p>
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'left' }}>
+                                    {brand.logo
+                                        ? <img src={brand.logo} alt="לוגו המיישם" style={{ height: '45px', marginBottom: '5px', objectFit: 'contain' }} />
+                                        : <img src="oneflowlogo.png" alt="ONEFLOW 360 PRO" style={{ height: '40px', marginBottom: '5px', objectFit: 'contain' }} />}
+                                    <p style={{ fontSize: '10pt', letterSpacing: '1px', textTransform: 'uppercase', color: '#64748b' }}>Digital Backbone Solutions</p>
+                                </div>
+                            </div>
+
+                            <div className="avoid-break" style={{ marginBottom: '25px' }}>
+                                <h2>לכבוד</h2>
+                                <table>
+                                    <tbody>
+                                        <tr>
+                                            <td style={{ fontWeight: 'bold', width: '25%' }}>שם הלקוח</td>
+                                            <td>{pr.clientName}</td>
+                                            <td style={{ fontWeight: 'bold', width: '20%' }}>ח.פ / ע.מ</td>
+                                            <td>{pr.clientBusinessId || '—'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ fontWeight: 'bold' }}>איש קשר</td>
+                                            <td>{pr.clientContactName || '—'}</td>
+                                            <td style={{ fontWeight: 'bold' }}>טלפון</td>
+                                            <td dir="ltr" style={{ textAlign: 'right' }}>{pr.clientPhone || '—'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style={{ fontWeight: 'bold' }}>מייל</td>
+                                            <td dir="ltr" style={{ textAlign: 'right' }}>{pr.clientEmail || '—'}</td>
+                                            <td style={{ fontWeight: 'bold' }}>כתובת</td>
+                                            <td>{pr.clientAddress || '—'}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {pr.introText && (
+                                <div className="avoid-break" style={{ marginBottom: '25px' }}>
+                                    <p style={{ fontSize: '11pt', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{pr.introText}</p>
+                                </div>
+                            )}
+
+                            <div className="avoid-break">
+                                <h2>תכולת ההצעה</h2>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th style={{ width: '55%' }}>מודול</th>
+                                            <th style={{ textAlign: 'center' }}>רמה</th>
+                                            <th style={{ textAlign: 'center' }}>עלות חודשית</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(pr.selection.selectedModules || []).map(id => {
+                                            const m = (config.modules || []).find(x => x.id === id);
+                                            return (
+                                                <tr key={id}>
+                                                    <td>
+                                                        <div style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1e293b' }}>{m ? m.name : id}</div>
+                                                        {m && m.note && <div style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>{m.note}</div>}
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        {m && (
+                                                            <span className={'badge ' + (m.tier === 'premium' ? 'badge-premium' : 'badge-basic')}>
+                                                                {m.tier === 'premium' ? config.moduleTiers.premium.label : config.moduleTiers.basic.label}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{m ? money(m.price) : '—'}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {Number(pr.selection.extraTxPacks) > 0 && (
+                                            <tr>
+                                                <td style={{ fontWeight: 'bold' }}>חבילות טרנזקציה נוספות</td>
+                                                <td style={{ textAlign: 'center' }}>—</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{pr.selection.extraTxPacks}</td>
+                                            </tr>
+                                        )}
+                                        {Number(pr.selection.extraUserPacks) > 0 && (
+                                            <tr>
+                                                <td style={{ fontWeight: 'bold' }}>חבילות משתמשים נוספות</td>
+                                                <td style={{ textAlign: 'center' }}>—</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{pr.selection.extraUserPacks}</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="summary-box avoid-break">
+                                <h3 style={{ marginTop: 0, borderBottom: 'none', fontSize: '18pt', color: '#1e3a8a' }}>סיכום ההצעה</h3>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
+                                    <div style={{ fontSize: '14pt', fontWeight: 'bold' }}>עלות חודשית קבועה:</div>
+                                    <div style={{ fontSize: '24pt', fontWeight: '900', color: '#1e3a8a' }}>{money(pr.totals.totalMRR || 0)}</div>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '20px', borderTop: '2px dashed #cbd5e1' }}>
+                                    <div style={{ fontSize: '14pt', fontWeight: 'bold', color: '#c2410c' }}>עלות הקמה חד-פעמית:</div>
+                                    <div style={{ fontSize: '24pt', fontWeight: '900', color: '#c2410c' }}>{money(pr.totals.totalSetup || 0)}</div>
+                                </div>
+                            </div>
+
+                            {pr.termsText && (
+                                <div className="avoid-break" style={{ marginTop: '25px' }}>
+                                    <h2>תנאים</h2>
+                                    <p style={{ fontSize: '10.5pt', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{pr.termsText}</p>
+                                </div>
+                            )}
+
+                            {pr.closingText && (
+                                <div className="avoid-break" style={{ marginTop: '20px' }}>
+                                    <p style={{ fontSize: '11pt', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{pr.closingText}</p>
+                                </div>
+                            )}
+
+                            <div className="avoid-break" style={{ marginTop: '40px', textAlign: 'center', fontSize: '10pt', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                                {daysLeft > 0 && (
+                                    <p style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '11pt' }}>ההצעה בתוקף עד {new Date(pr.retentionExpiresAt).toLocaleDateString('he-IL')}</p>
+                                )}
+                                <p style={{ marginTop: '8px' }}>המחירים אינם כוללים מע"מ</p>
+                                <p style={{ fontWeight: 'bold', marginTop: '10px', color: '#1e293b' }}>{config.platformName}</p>
+                            </div>
+                            </>); })()}
+                        </div>
+                        ) : (
                         <div className="print-container">
 
                             {/* כותרת ולוגואים */}
@@ -4298,6 +4460,7 @@
                                 </p>
                             </div>
                         </div>
+                        )}
                     </div>
 
                 </div>

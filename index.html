@@ -564,19 +564,32 @@
 
         const DEFAULT_ORG_SLUG = 'onebtn_team';
 
+        // ברירת המחדל מגיעה עם האתר (שדה backend ב-pricing.json), כדי שכל מיישם
+        // יתחבר לשרת אוטומטית. עקיפה מקומית, אם קיימת, גוברת עליה.
+        let SHIPPED_BACKEND = { baseUrl: '', orgSlug: DEFAULT_ORG_SLUG, extraHeaders: '' };
+        const setShippedBackend = (b) => {
+            if (!b || typeof b !== 'object') return;
+            SHIPPED_BACKEND = {
+                baseUrl: (b.baseUrl || '').replace(/\/+$/, ''),
+                orgSlug: b.orgSlug !== undefined ? b.orgSlug : DEFAULT_ORG_SLUG,
+                extraHeaders: b.extraHeaders || ''
+            };
+        };
+
+        const readLocalBackendOverride = () => {
+            try { return JSON.parse(localStorage.getItem(BACKEND_KEY) || 'null'); }
+            catch { return null; }
+        };
+
         const readBackendConfig = () => {
-            const empty = { baseUrl: '', token: '', orgSlug: DEFAULT_ORG_SLUG, extraHeaders: '' };
-            try {
-                const raw = localStorage.getItem(BACKEND_KEY);
-                if (!raw) return empty;
-                const c = JSON.parse(raw);
-                return {
-                    baseUrl: (c.baseUrl || '').replace(/\/+$/, ''),
-                    token: c.token || '',
-                    orgSlug: c.orgSlug !== undefined ? c.orgSlug : DEFAULT_ORG_SLUG,
-                    extraHeaders: c.extraHeaders || ''
-                };
-            } catch { return empty; }
+            const o = readLocalBackendOverride() || {};
+            const pick = (k, d) => (o[k] !== undefined && o[k] !== '') ? o[k] : d;
+            return {
+                baseUrl: String(pick('baseUrl', SHIPPED_BACKEND.baseUrl)).replace(/\/+$/, ''),
+                token: o.token || '',
+                orgSlug: pick('orgSlug', SHIPPED_BACKEND.orgSlug),
+                extraHeaders: pick('extraHeaders', SHIPPED_BACKEND.extraHeaders)
+            };
         };
 
         // כותרות נוספות, שורה לכל אחת בתבנית  שם: ערך
@@ -791,8 +804,26 @@
         };
 
         function App() {
-            const [storage, setStorage] = useState(() => getStorage());
+            const [bootReady, setBootReady] = useState(false);
+            const [storage, setStorage] = useState(null);
             const [backendCfg, setBackendCfg] = useState(() => readBackendConfig());
+            const [adminTab, setAdminTab] = useState('pricing');
+
+            // שלב אתחול: קוראים את pricing.json כדי לדעת לאיזה שרת לפנות, ורק אז בונים את שכבת האחסון
+            useEffect(() => {
+                let alive = true;
+                fetch(OFFICIAL_URL + '?t=' + Date.now(), { cache: 'no-store' })
+                    .then(r => r.ok ? r.json() : Promise.reject(new Error('no seed')))
+                    .then(j => { if (j && j.backend) setShippedBackend(j.backend); })
+                    .catch(() => {})
+                    .finally(() => {
+                        if (!alive) return;
+                        setBackendCfg(readBackendConfig());
+                        setStorage(getStorage());
+                        setBootReady(true);
+                    });
+                return () => { alive = false; };
+            }, []);
 
             const [book, setBook] = useState(null);          // מסמך המחירון הפעיל
             const [master, setMaster] = useState(null);      // מחירון המאסטר, לצורך סנכרון
@@ -821,6 +852,7 @@
             });
 
             useEffect(() => {
+                if (!storage) return;
                 let alive = true;
                 (async () => {
                     let masterDoc = null;
@@ -867,7 +899,7 @@
 
             // ---------- סנכרון ברקע: בדיקה תקופתית אם המאסטר התעדכן ----------
             useEffect(() => {
-                if (isMasterBook) return;
+                if (isMasterBook || !storage) return;
                 const tick = async () => {
                     try {
                         let m = await storage.get('master');
@@ -941,14 +973,15 @@
             };
 
             const refreshBooks = async () => {
+                if (!storage) return;
                 try { setBooks(await storage.list()); } catch { setBooks([]); }
             };
             const refreshVersions = async () => {
-                if (!book) return;
+                if (!book || !storage) return;
                 try { setVersions(await storage.listVersions(book.id)); } catch { setVersions([]); }
             };
             useEffect(() => {
-                if (!isAdminOpen) return;
+                if (!isAdminOpen || !storage) return;
                 refreshBooks();
                 refreshVersions();
             }, [isAdminOpen, storage, book && book.id]);
@@ -1050,6 +1083,15 @@
                     setConnTest({ ok: false, msg: 'לא ניתן להגיע לשרת: ' + (e.message || e), sent: Object.keys(headers) });
                 }
             };
+
+            // טאבים במסך הניהול. הגדרות המערכת והמיישמים גלויות רק במחירון המאסטר.
+            const ADMIN_TABS = [
+                { id: 'pricing', label: 'מחירון', icon: 'coins', masterOnly: false },
+                { id: 'brand',   label: 'מיתוג',  icon: 'image', masterOnly: false },
+                { id: 'versions',label: 'גרסאות', icon: 'clock', masterOnly: false },
+                { id: 'partners',label: 'מיישמים', icon: 'users', masterOnly: true },
+                { id: 'system',  label: 'מערכת',  icon: 'server', masterOnly: true },
+            ].filter(t => !t.masterOnly || isMasterBook);
 
             const applyBackendConfig = (cfg) => {
                 writeBackendConfig(cfg);
@@ -1474,7 +1516,7 @@
                 </div>
             );
 
-            if (loadState === 'loading' || !book) {
+            if (!bootReady || loadState === 'loading' || !book) {
                 return (
                     <div dir="rtl" className="min-h-screen bg-slate-50 flex items-center justify-center">
                         <div className="text-center">
@@ -2081,240 +2123,15 @@
                                         )}
                                     </div>
 
-                                    {/* חיבור למסד נתונים */}
-                                    <div className={`p-6 rounded-3xl border-2 ${backendCfg.baseUrl ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-100 border-slate-300'}`}>
-                                        <h3 className="font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
-                                            <Icon name="server" size={20} /> חיבור למסד נתונים
-                                        </h3>
-                                        <p className={`text-sm font-bold mb-4 ${backendCfg.baseUrl ? 'text-emerald-800' : 'text-slate-600'}`}>
-                                            {backendCfg.baseUrl
-                                                ? 'מחובר. המחירונים, הסיסמאות והגרסאות נשמרים בשרת וזמינים מכל מכשיר.'
-                                                : 'לא מחובר. הכל נשמר בדפדפן הזה בלבד — מחירונים שתיצור לא יהיו זמינים למיישמים ממכשירים אחרים.'}
-                                        </p>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 mb-1 block">כתובת ה-API</label>
-                                                <input value={backendCfg.baseUrl} dir="ltr"
-                                                    onChange={e => setBackendCfg({ ...backendCfg, baseUrl: e.target.value })}
-                                                    placeholder="https://api.example.com" className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מפתח גישה</label>
-                                                <input value={backendCfg.token} dir="ltr" type="password"
-                                                    onChange={e => setBackendCfg({ ...backendCfg, token: e.target.value })}
-                                                    placeholder="Bearer token" className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מזהה ארגון · x-org-slug</label>
-                                                <input value={backendCfg.orgSlug} dir="ltr"
-                                                    onChange={e => setBackendCfg({ ...backendCfg, orgSlug: e.target.value })}
-                                                    placeholder="onebtn_team" className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 mb-1 block">כותרות נוספות (שורה לכל אחת: שם: ערך)</label>
-                                                <textarea value={backendCfg.extraHeaders} dir="ltr" rows={2}
-                                                    onChange={e => setBackendCfg({ ...backendCfg, extraHeaders: e.target.value })}
-                                                    placeholder="x-api-version: 1" className="w-full p-3 border rounded-xl bg-white font-bold text-xs" />
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-3 bg-white/70 border rounded-xl p-3">
-                                            <div className="text-[11px] font-bold text-slate-500 mb-1">הכותרות שיישלחו בכל בקשה</div>
-                                            <div dir="ltr" className="text-[11px] font-mono text-slate-700 space-y-0.5">
-                                                {Object.entries(buildHeaders(backendCfg)).map(([k, v]) => (
-                                                    <div key={k}>{k}: {k === 'Authorization' ? 'Bearer ***' : v}</div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-2 mt-3">
-                                            <button onClick={() => applyBackendConfig(backendCfg)}
-                                                className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-700">התחבר</button>
-                                            <button onClick={() => testConnection(backendCfg)}
-                                                className="px-6 py-2.5 rounded-xl font-bold text-slate-700 bg-white border hover:bg-slate-100">בדוק חיבור</button>
-                                            {backendCfg.baseUrl && (
-                                                <button onClick={() => applyBackendConfig({ ...backendCfg, baseUrl: '', token: '' })}
-                                                    className="px-6 py-2.5 rounded-xl font-bold text-red-500 bg-white border border-red-200 hover:bg-red-50">נתק</button>
-                                            )}
-                                        </div>
-
-                                        {connTest && (
-                                            <div className={`mt-3 rounded-xl p-3 text-sm font-bold ${connTest.pending ? 'bg-slate-100 text-slate-600'
-                                                : connTest.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                                                {connTest.pending ? 'בודק…' : connTest.msg}
-                                            </div>
-                                        )}
-                                        <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
-                                            מבנה ה-API הנדרש מתועד בקובץ README.md שבתיקיית המערכת. עד לחיבור, המערכת עובדת במלואה מול אחסון הדפדפן.
-                                        </p>
+                                    <div className="flex flex-wrap gap-1 border-b border-slate-200 -mb-4">
+                                        {ADMIN_TABS.map(t => (
+                                            <button key={t.id} onClick={() => setAdminTab(t.id)}
+                                                className={`px-4 py-2.5 font-black text-sm rounded-t-xl border-b-2 -mb-px flex items-center gap-2 transition-colors ${adminTab === t.id ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                                <Icon name={t.icon} size={14} /> {t.label}
+                                            </button>
+                                        ))}
                                     </div>
-
-                                    {/* מחולל מחירונים - רק במחירון המאסטר */}
-                                    {isMasterBook && (
-                                        <div className="bg-white p-6 rounded-3xl border border-slate-200">
-                                            <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-2">מחולל מחירונים למיישמים</h3>
-                                            <p className="text-xs text-slate-400 mb-6">
-                                                המחירון נוצר כהעתק של המחירון הפתוח כרגע. המיישם יקבל קישור וסיסמה, ויוכל לסנכרן ממך עדכונים בכל עת.
-                                            </p>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-blue-50 border border-blue-200 rounded-2xl p-5">
-                                                <div>
-                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">מזהה באנגלית (מופיע בקישור)</label>
-                                                    <input value={genForm.id} dir="ltr"
-                                                        onChange={e => setGenForm({ ...genForm, id: e.target.value })}
-                                                        placeholder="moshe" className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">שם המחירון</label>
-                                                    <input value={genForm.label}
-                                                        onChange={e => setGenForm({ ...genForm, label: e.target.value })}
-                                                        placeholder="מחירון משה" className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">שם המיישם</label>
-                                                    <input value={genForm.implementerName}
-                                                        onChange={e => setGenForm({ ...genForm, implementerName: e.target.value })}
-                                                        placeholder="משה כהן" className="w-full p-3 border rounded-xl bg-white" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">סיסמה למיישם</label>
-                                                    <input value={genForm.password} dir="ltr"
-                                                        onChange={e => setGenForm({ ...genForm, password: e.target.value })}
-                                                        placeholder="לפחות 4 תווים" className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                                </div>
-                                                <div className="md:col-span-2 flex items-center gap-3">
-                                                    <button onClick={generatePricebook} disabled={busy === 'gen'}
-                                                        className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg disabled:opacity-50">
-                                                        {busy === 'gen' ? 'יוצר…' : 'צור מחירון ושלח קישור'}
-                                                    </button>
-                                                    {genError && <span className="text-sm font-bold text-red-600">{genError}</span>}
-                                                </div>
-                                            </div>
-
-                                            {genResult && (
-                                                <div className="mt-4 bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-5">
-                                                    <div className="font-black text-emerald-900 mb-3 flex items-center gap-2">
-                                                        <Icon name="check-circle-2" size={18} /> המחירון "{genResult.id}" נוצר. מסור למיישם:
-                                                    </div>
-                                                    <div className="space-y-2 text-sm">
-                                                        <div>
-                                                            <div className="text-xs font-bold text-emerald-700 mb-1">קישור אישי</div>
-                                                            <div className="flex gap-2">
-                                                                <input readOnly dir="ltr" value={genResult.link}
-                                                                    className="flex-grow p-2.5 border rounded-lg bg-white font-bold text-xs" />
-                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.link)}
-                                                                    className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-xs font-bold text-emerald-700 mb-1">סיסמה</div>
-                                                            <div className="flex gap-2">
-                                                                <input readOnly dir="ltr" value={genResult.password}
-                                                                    className="flex-grow p-2.5 border rounded-lg bg-white font-black" />
-                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.password)}
-                                                                    className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-[11px] text-emerald-700 mt-3">הסיסמה נשמרת מוצפנת ולא ניתן לשחזר אותה. אם תישכח, אפשר לקבוע חדשה ברשימה שמתחת.</p>
-                                                </div>
-                                            )}
-
-                                            <h4 className="font-black text-slate-700 mt-8 mb-3">מחירונים קיימים ({books.length})</h4>
-                                            {books.length === 0 ? (
-                                                <p className="text-sm text-slate-400">עדיין לא נוצרו מחירונים.</p>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    {books.map(b => (
-                                                        <div key={b.id} className="flex flex-wrap items-center gap-3 bg-slate-50 border rounded-xl p-3">
-                                                            <div className="flex-grow min-w-[160px]">
-                                                                <div className="font-black text-slate-800">{b.label || b.id}</div>
-                                                                <div className="text-[11px] text-slate-500">
-                                                                    {b.id} · גרסה {b.version} · {b.hasPassword ? 'מוגן בסיסמה' : 'ללא סיסמה'}
-                                                                    {b.implementerName ? ' · ' + b.implementerName : ''}
-                                                                </div>
-                                                            </div>
-                                                            {b.id !== 'master' && (
-                                                                <>
-                                                                    <button onClick={() => navigator.clipboard?.writeText(window.location.origin + window.location.pathname + '?p=' + b.id)}
-                                                                        className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">העתק קישור</button>
-                                                                    <button onClick={() => resetBookPassword(b.id)}
-                                                                        className="text-xs font-bold text-slate-600 bg-white border px-3 py-2 rounded-lg">סיסמה חדשה</button>
-                                                                    <button onClick={() => deleteBook(b.id)}
-                                                                        className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg"><Icon name="trash-2" size={16} /></button>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    {/* היסטוריית גרסאות */}
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
-                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-4">היסטוריית גרסאות ({versions.length})</h3>
-                                        {versions.length === 0 ? (
-                                            <p className="text-sm text-slate-400">עדיין אין גרסאות שמורות. כל שמירה יוצרת גרסה.</p>
-                                        ) : (
-                                            <div className="space-y-2 max-h-80 overflow-y-auto custom-scroll">
-                                                {versions.map(v => (
-                                                    <div key={v.id} className="flex flex-wrap items-center gap-3 bg-slate-50 border rounded-xl p-3">
-                                                        <div className="flex-grow min-w-[180px]">
-                                                            <div className="font-bold text-slate-800 text-sm">{v.note}</div>
-                                                            <div className="text-[11px] text-slate-500">גרסה {v.version} · {new Date(v.at).toLocaleString('he-IL')}</div>
-                                                        </div>
-                                                        <button onClick={() => restoreVersion(v.id)}
-                                                            className="text-xs font-bold text-slate-700 bg-white border px-4 py-2 rounded-lg hover:bg-slate-100">שחזר</button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* מיתוג ולוגו */}
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
-                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6 flex items-center gap-2">
-                                            <Icon name="image" className="text-blue-600" /> מיתוג ולוגו
-                                        </h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="bg-slate-50 p-5 rounded-2xl border">
-                                                <h4 className="font-bold text-slate-700 mb-3">לוגו המוצר (קבוע)</h4>
-                                                <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
-                                                    <BrandLogo src={config.brandLogo} className="max-h-16 object-contain" />
-                                                </div>
-                                                <label className="text-xs font-bold text-slate-500 mb-1 block">שם קובץ הלוגו (בתיקיית המערכת)</label>
-                                                <input value={config.brandLogo}
-                                                    onChange={e => updateConfigValue(['brandLogo'], e.target.value)}
-                                                    className="w-full p-3 border rounded-xl bg-white font-bold" />
-                                            </div>
-
-                                            <div className="bg-blue-50 p-5 rounded-2xl border border-blue-200">
-                                                <h4 className="font-bold text-blue-800 mb-3">הלוגו שלך (המיישם)</h4>
-                                                <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
-                                                    {brand.logo
-                                                        ? <img src={brand.logo} alt="לוגו המיישם" className="max-h-16 object-contain" />
-                                                        : <span className="text-xs text-slate-400">עדיין לא הועלה לוגו</span>}
-                                                </div>
-                                                <input type="file" accept="image/*" style={{ display: 'none' }} ref={logoInputRef} onChange={uploadImplementerLogo} />
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => logoInputRef.current.click()}
-                                                        className="flex-grow bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2">
-                                                        <Icon name="upload" size={16} /> {brand.logo ? 'החלף לוגו' : 'העלה לוגו'}
-                                                    </button>
-                                                    {brand.logo && (
-                                                        <button onClick={removeImplementerLogo}
-                                                            className="px-4 py-2.5 rounded-xl font-bold text-red-500 bg-white border border-red-200 hover:bg-red-50">הסר</button>
-                                                    )}
-                                                </div>
-                                                {logoError && <p className="text-xs font-bold text-red-600 mt-2">{logoError}</p>}
-                                                <p className="text-[11px] text-blue-700/70 mt-2 leading-relaxed">
-                                                    הלוגו נשמר בדפדפן שלך ונטען אוטומטית בכל כניסה — אין צורך להעלות אותו מחדש. הוא מוצג בראש המסך ובמסמך ה-PDF, ושורד גם איפוס מחירון.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
+                                    {adminTab === 'pricing' && (<>
                                     {/* הגדרות גלובליות */}
                                     <div className="bg-white p-6 rounded-3xl border border-slate-200">
                                         <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6">חבילת הבסיס והגדרות אומדן</h3>
@@ -2638,6 +2455,270 @@
                                         </div>
                                     </div>
 
+                                    </>)}
+                                    {adminTab === 'brand' && (<>
+                                    {/* מיתוג ולוגו */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-6 flex items-center gap-2">
+                                            <Icon name="image" className="text-blue-600" /> מיתוג ולוגו
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="bg-slate-50 p-5 rounded-2xl border">
+                                                <h4 className="font-bold text-slate-700 mb-3">לוגו המוצר (קבוע)</h4>
+                                                <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
+                                                    <BrandLogo src={config.brandLogo} className="max-h-16 object-contain" />
+                                                </div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">שם קובץ הלוגו (בתיקיית המערכת)</label>
+                                                <input value={config.brandLogo}
+                                                    onChange={e => updateConfigValue(['brandLogo'], e.target.value)}
+                                                    className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                            </div>
+
+                                            <div className="bg-blue-50 p-5 rounded-2xl border border-blue-200">
+                                                <h4 className="font-bold text-blue-800 mb-3">הלוגו שלך (המיישם)</h4>
+                                                <div className="bg-white border rounded-xl h-24 flex items-center justify-center p-3 mb-3">
+                                                    {brand.logo
+                                                        ? <img src={brand.logo} alt="לוגו המיישם" className="max-h-16 object-contain" />
+                                                        : <span className="text-xs text-slate-400">עדיין לא הועלה לוגו</span>}
+                                                </div>
+                                                <input type="file" accept="image/*" style={{ display: 'none' }} ref={logoInputRef} onChange={uploadImplementerLogo} />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => logoInputRef.current.click()}
+                                                        className="flex-grow bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2">
+                                                        <Icon name="upload" size={16} /> {brand.logo ? 'החלף לוגו' : 'העלה לוגו'}
+                                                    </button>
+                                                    {brand.logo && (
+                                                        <button onClick={removeImplementerLogo}
+                                                            className="px-4 py-2.5 rounded-xl font-bold text-red-500 bg-white border border-red-200 hover:bg-red-50">הסר</button>
+                                                    )}
+                                                </div>
+                                                {logoError && <p className="text-xs font-bold text-red-600 mt-2">{logoError}</p>}
+                                                <p className="text-[11px] text-blue-700/70 mt-2 leading-relaxed">
+                                                    הלוגו נשמר בדפדפן שלך ונטען אוטומטית בכל כניסה — אין צורך להעלות אותו מחדש. הוא מוצג בראש המסך ובמסמך ה-PDF, ושורד גם איפוס מחירון.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    </>)}
+                                    {adminTab === 'versions' && (<>
+                                    {/* היסטוריית גרסאות */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                        <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-4">היסטוריית גרסאות ({versions.length})</h3>
+                                        {versions.length === 0 ? (
+                                            <p className="text-sm text-slate-400">עדיין אין גרסאות שמורות. כל שמירה יוצרת גרסה.</p>
+                                        ) : (
+                                            <div className="space-y-2 max-h-80 overflow-y-auto custom-scroll">
+                                                {versions.map(v => (
+                                                    <div key={v.id} className="flex flex-wrap items-center gap-3 bg-slate-50 border rounded-xl p-3">
+                                                        <div className="flex-grow min-w-[180px]">
+                                                            <div className="font-bold text-slate-800 text-sm">{v.note}</div>
+                                                            <div className="text-[11px] text-slate-500">גרסה {v.version} · {new Date(v.at).toLocaleString('he-IL')}</div>
+                                                        </div>
+                                                        <button onClick={() => restoreVersion(v.id)}
+                                                            className="text-xs font-bold text-slate-700 bg-white border px-4 py-2 rounded-lg hover:bg-slate-100">שחזר</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    </>)}
+                                    {adminTab === 'partners' && isMasterBook && (<>
+                                    {/* מחולל מחירונים - רק במחירון המאסטר */}
+                                    {isMasterBook && (
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                                            <h3 className="font-bold text-xl text-slate-800 border-b pb-3 mb-2">מחולל מחירונים למיישמים</h3>
+                                            <p className="text-xs text-slate-400 mb-6">
+                                                המחירון נוצר כהעתק של המחירון הפתוח כרגע. המיישם יקבל קישור וסיסמה, ויוכל לסנכרן ממך עדכונים בכל עת.
+                                            </p>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-blue-50 border border-blue-200 rounded-2xl p-5">
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">מזהה באנגלית (מופיע בקישור)</label>
+                                                    <input value={genForm.id} dir="ltr"
+                                                        onChange={e => setGenForm({ ...genForm, id: e.target.value })}
+                                                        placeholder="moshe" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">שם המחירון</label>
+                                                    <input value={genForm.label}
+                                                        onChange={e => setGenForm({ ...genForm, label: e.target.value })}
+                                                        placeholder="מחירון משה" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">שם המיישם</label>
+                                                    <input value={genForm.implementerName}
+                                                        onChange={e => setGenForm({ ...genForm, implementerName: e.target.value })}
+                                                        placeholder="משה כהן" className="w-full p-3 border rounded-xl bg-white" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-blue-800 mb-1 block">סיסמה למיישם</label>
+                                                    <input value={genForm.password} dir="ltr"
+                                                        onChange={e => setGenForm({ ...genForm, password: e.target.value })}
+                                                        placeholder="לפחות 4 תווים" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                </div>
+                                                <div className="md:col-span-2 flex items-center gap-3">
+                                                    <button onClick={generatePricebook} disabled={busy === 'gen'}
+                                                        className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg disabled:opacity-50">
+                                                        {busy === 'gen' ? 'יוצר…' : 'צור מחירון ושלח קישור'}
+                                                    </button>
+                                                    {genError && <span className="text-sm font-bold text-red-600">{genError}</span>}
+                                                </div>
+                                            </div>
+
+                                            {genResult && (
+                                                <div className="mt-4 bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-5">
+                                                    <div className="font-black text-emerald-900 mb-3 flex items-center gap-2">
+                                                        <Icon name="check-circle-2" size={18} /> המחירון "{genResult.id}" נוצר. מסור למיישם:
+                                                    </div>
+                                                    <div className="space-y-2 text-sm">
+                                                        <div>
+                                                            <div className="text-xs font-bold text-emerald-700 mb-1">קישור אישי</div>
+                                                            <div className="flex gap-2">
+                                                                <input readOnly dir="ltr" value={genResult.link}
+                                                                    className="flex-grow p-2.5 border rounded-lg bg-white font-bold text-xs" />
+                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.link)}
+                                                                    className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-xs font-bold text-emerald-700 mb-1">סיסמה</div>
+                                                            <div className="flex gap-2">
+                                                                <input readOnly dir="ltr" value={genResult.password}
+                                                                    className="flex-grow p-2.5 border rounded-lg bg-white font-black" />
+                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.password)}
+                                                                    className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11px] text-emerald-700 mt-3">הסיסמה נשמרת מוצפנת ולא ניתן לשחזר אותה. אם תישכח, אפשר לקבוע חדשה ברשימה שמתחת.</p>
+                                                </div>
+                                            )}
+
+                                            <h4 className="font-black text-slate-700 mt-8 mb-3">מחירונים קיימים ({books.length})</h4>
+                                            {books.length === 0 ? (
+                                                <p className="text-sm text-slate-400">עדיין לא נוצרו מחירונים.</p>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {books.map(b => (
+                                                        <div key={b.id} className="flex flex-wrap items-center gap-3 bg-slate-50 border rounded-xl p-3">
+                                                            <div className="flex-grow min-w-[160px]">
+                                                                <div className="font-black text-slate-800">{b.label || b.id}</div>
+                                                                <div className="text-[11px] text-slate-500">
+                                                                    {b.id} · גרסה {b.version} · {b.hasPassword ? 'מוגן בסיסמה' : 'ללא סיסמה'}
+                                                                    {b.implementerName ? ' · ' + b.implementerName : ''}
+                                                                </div>
+                                                            </div>
+                                                            {b.id !== 'master' && (
+                                                                <>
+                                                                    <button onClick={() => navigator.clipboard?.writeText(window.location.origin + window.location.pathname + '?p=' + b.id)}
+                                                                        className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">העתק קישור</button>
+                                                                    <button onClick={() => resetBookPassword(b.id)}
+                                                                        className="text-xs font-bold text-slate-600 bg-white border px-3 py-2 rounded-lg">סיסמה חדשה</button>
+                                                                    <button onClick={() => deleteBook(b.id)}
+                                                                        className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg"><Icon name="trash-2" size={16} /></button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    </>)}
+                                    {adminTab === 'system' && isMasterBook && (<>
+                                    {/* חיבור למסד נתונים */}
+                                    <div className={`p-6 rounded-3xl border-2 ${backendCfg.baseUrl ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-100 border-slate-300'}`}>
+                                        <h3 className="font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
+                                            <Icon name="server" size={20} /> חיבור למסד נתונים
+                                        </h3>
+                                        <p className={`text-sm font-bold mb-4 ${backendCfg.baseUrl ? 'text-emerald-800' : 'text-slate-600'}`}>
+                                            {backendCfg.baseUrl
+                                                ? 'מחובר. המחירונים, הסיסמאות והגרסאות נשמרים בשרת וזמינים מכל מכשיר.'
+                                                : 'לא מחובר. הכל נשמר בדפדפן הזה בלבד — מחירונים שתיצור לא יהיו זמינים למיישמים ממכשירים אחרים.'}
+                                        </p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">כתובת ה-API</label>
+                                                <input value={backendCfg.baseUrl} dir="ltr"
+                                                    onChange={e => setBackendCfg({ ...backendCfg, baseUrl: e.target.value })}
+                                                    placeholder="https://api.example.com" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מפתח גישה</label>
+                                                <input value={backendCfg.token} dir="ltr" type="password"
+                                                    onChange={e => setBackendCfg({ ...backendCfg, token: e.target.value })}
+                                                    placeholder="Bearer token" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מזהה ארגון · x-org-slug</label>
+                                                <input value={backendCfg.orgSlug} dir="ltr"
+                                                    onChange={e => setBackendCfg({ ...backendCfg, orgSlug: e.target.value })}
+                                                    placeholder="onebtn_team" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">כותרות נוספות (שורה לכל אחת: שם: ערך)</label>
+                                                <textarea value={backendCfg.extraHeaders} dir="ltr" rows={2}
+                                                    onChange={e => setBackendCfg({ ...backendCfg, extraHeaders: e.target.value })}
+                                                    placeholder="x-api-version: 1" className="w-full p-3 border rounded-xl bg-white font-bold text-xs" />
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-3 bg-white/70 border rounded-xl p-3">
+                                            <div className="text-[11px] font-bold text-slate-500 mb-1">הכותרות שיישלחו בכל בקשה</div>
+                                            <div dir="ltr" className="text-[11px] font-mono text-slate-700 space-y-0.5">
+                                                {Object.entries(buildHeaders(backendCfg)).map(([k, v]) => (
+                                                    <div key={k}>{k}: {k === 'Authorization' ? 'Bearer ***' : v}</div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2 mt-3">
+                                            <button onClick={() => applyBackendConfig(backendCfg)}
+                                                className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-700">התחבר</button>
+                                            <button onClick={() => testConnection(backendCfg)}
+                                                className="px-6 py-2.5 rounded-xl font-bold text-slate-700 bg-white border hover:bg-slate-100">בדוק חיבור</button>
+                                            {backendCfg.baseUrl && (
+                                                <button onClick={() => applyBackendConfig({ ...backendCfg, baseUrl: '', token: '' })}
+                                                    className="px-6 py-2.5 rounded-xl font-bold text-red-500 bg-white border border-red-200 hover:bg-red-50">נתק</button>
+                                            )}
+                                        </div>
+
+                                        {connTest && (
+                                            <div className={`mt-3 rounded-xl p-3 text-sm font-bold ${connTest.pending ? 'bg-slate-100 text-slate-600'
+                                                : connTest.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                {connTest.pending ? 'בודק…' : connTest.msg}
+                                            </div>
+                                        )}
+                                        <div className="mt-5 pt-4 border-t border-slate-300/40">
+                                            <div className="font-black text-slate-700 text-sm mb-1">כדי שגם המיישמים יתחברו לשרת</div>
+                                            <p className="text-[11px] text-slate-600 leading-relaxed mb-2">
+                                                ההגדרות כאן חלות על הדפדפן שלך בלבד. כדי שכל המיישמים יגיעו לשרת, הכתובת חייבת להגיע אליהם מהאתר —
+                                                העתק את הקטע הבא והוסף אותו לקובץ pricing.json. פעולה חד-פעמית. מפתח הגישה נשאר אצלך ואינו נכלל בקטע.
+                                            </p>
+                                            <textarea readOnly dir="ltr" rows={5}
+                                                value={'"backend": ' + JSON.stringify({
+                                                    baseUrl: backendCfg.baseUrl,
+                                                    orgSlug: backendCfg.orgSlug,
+                                                    extraHeaders: backendCfg.extraHeaders
+                                                }, null, 2) + ','}
+                                                className="w-full p-3 border rounded-xl bg-white font-mono text-[11px]" />
+                                            <button onClick={() => navigator.clipboard?.writeText('"backend": ' + JSON.stringify({
+                                                    baseUrl: backendCfg.baseUrl,
+                                                    orgSlug: backendCfg.orgSlug,
+                                                    extraHeaders: backendCfg.extraHeaders
+                                                }, null, 2) + ',')}
+                                                className="mt-2 px-4 py-2 rounded-lg bg-white border font-bold text-xs">העתק קטע</button>
+                                            <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+                                                כתובת השרת שהאתר מפרסם כרגע: <span className="font-black">{SHIPPED_BACKEND.baseUrl || 'לא מוגדרת'}</span>.
+                                                מבנה ה-API מתועד ב-README.md.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    </>)}
                                 </div>
                             </div>
                         </div>

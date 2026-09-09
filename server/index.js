@@ -74,24 +74,50 @@ async function identify(req) {
 }
 
 // ---------- המרות ----------
+const profileOut = (r) => ({
+    businessName: r.profile_business_name, businessId: r.profile_business_id,
+    contactName: r.profile_contact_name, phone: r.profile_phone,
+    email: r.profile_email, address: r.profile_address,
+    completedAt: r.profile_completed_at
+});
+// כל שדות הפרופיל נדרשים - הפרופיל נחשב הושלם רק כששישתם מלאים
+const PROFILE_FIELDS = ['profile_business_name','profile_business_id','profile_contact_name','profile_phone','profile_email','profile_address'];
+const isProfileComplete = (r) => PROFILE_FIELDS.every(k => String(r[k] || '').trim());
+
 const bookOut = (r) => r && ({
     id: r.id, kind: r.kind, label: r.label, implementerName: r.implementer_name,
     auth: r.auth_hash ? { salt: r.auth_salt, hash: r.auth_hash } : null,
     config: r.config, masterVersion: r.master_version, version: r.version,
     disabled: r.disabled, updatedAt: r.updated_at, createdAt: r.created_at,
-    passwordChangedAt: r.password_changed_at, lastLoginAt: r.last_login_at
+    passwordChangedAt: r.password_changed_at, lastLoginAt: r.last_login_at,
+    profile: profileOut(r), profileCompleted: isProfileComplete(r)
 });
 const bookSummary = (r) => ({
     id: r.id, label: r.label, kind: r.kind, implementerName: r.implementer_name,
     updatedAt: r.updated_at, version: r.version, hasPassword: !!r.auth_hash,
     disabled: r.disabled, passwordChangedAt: r.password_changed_at,
-    lastLoginAt: r.last_login_at, quoteCount: Number(r.quote_count || 0)
+    lastLoginAt: r.last_login_at, quoteCount: Number(r.quote_count || 0),
+    profile: profileOut(r), profileCompleted: isProfileComplete(r),
+    openProposalCount: Number(r.open_proposal_count || 0),
+    openProposalSum: Number(r.open_proposal_sum || 0)
 });
 const quoteOut = (r) => ({
     id: r.id, pricebookId: r.pricebook_id, implementerName: r.implementer_name,
     clientName: r.client_name, note: r.note, selection: r.selection, totals: r.totals,
     createdAt: r.created_at, updatedAt: r.updated_at,
     pricebookLabel: r.pricebook_label
+});
+const proposalOut = (r) => ({
+    id: r.id, pricebookId: r.pricebook_id, sourceQuoteId: r.source_quote_id,
+    createdBy: r.created_by,
+    clientName: r.client_name, clientBusinessId: r.client_business_id,
+    clientContactName: r.client_contact_name, clientPhone: r.client_phone,
+    clientEmail: r.client_email, clientAddress: r.client_address,
+    introText: r.intro_text, termsText: r.terms_text, closingText: r.closing_text,
+    selection: r.selection, totals: r.totals, status: r.status,
+    retentionDays: r.retention_days, retentionExpiresAt: r.retention_expires_at,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+    pricebookLabel: r.pricebook_label, implementerName: r.implementer_name
 });
 
 // ---------- הניתוב ----------
@@ -135,17 +161,22 @@ async function route(req, res, url, who) {
     }
 
     // ===== מחירונים =====
+    const BOOK_LIST_SQL = `
+        select p.*,
+               (select count(*) from quotes q where q.pricebook_id = p.id) as quote_count,
+               (select count(*) from proposals pr where pr.pricebook_id = p.id
+                   and pr.status in ('open','approved')) as open_proposal_count,
+               (select coalesce(sum((pr.totals->>'totalMRR')::numeric), 0) from proposals pr
+                   where pr.pricebook_id = p.id and pr.status in ('open','approved')) as open_proposal_sum
+        from pricebooks p`;
     if (seg[0] === 'pricebooks' && seg.length === 1 && m === 'GET') {
         if (who.role === 'admin') {
-            const { rows } = await pool.query(`
-                select p.*, (select count(*) from quotes q where q.pricebook_id = p.id) as quote_count
-                from pricebooks p order by (p.kind='master') desc, p.label nulls last, p.id`);
+            const { rows } = await pool.query(
+                BOOK_LIST_SQL + ` order by (p.kind='master') desc, p.label nulls last, p.id`);
             return send(res, 200, rows.map(bookSummary));
         }
         if (who.role === 'implementer') {
-            const { rows } = await pool.query(`
-                select p.*, (select count(*) from quotes q where q.pricebook_id = p.id) as quote_count
-                from pricebooks p where p.id=$1`, [who.pricebookId]);
+            const { rows } = await pool.query(BOOK_LIST_SQL + ` where p.id=$1`, [who.pricebookId]);
             return send(res, 200, rows.map(bookSummary));
         }
         return send(res, 200, []);
@@ -210,6 +241,28 @@ async function route(req, res, url, who) {
             await pool.query('delete from pricebooks where id=$1', [id]);
             return send(res, 204);
         }
+    }
+
+    // ===== פרופיל מיישם (חובה) =====
+    if (seg[0] === 'pricebooks' && seg[2] === 'profile' && seg.length === 3 && m === 'PUT') {
+        const id = seg[1];
+        const mayWrite = who.role === 'admin' || (who.role === 'implementer' && who.pricebookId === id);
+        if (!mayWrite) return send(res, 403, { error: 'forbidden' });
+        const d = await readBody(req);
+        const { rows } = await pool.query(`
+            update pricebooks set
+                profile_business_name=$2, profile_business_id=$3, profile_contact_name=$4,
+                profile_phone=$5, profile_email=$6, profile_address=$7,
+                profile_completed_at = case
+                    when $2<>'' and $3<>'' and $4<>'' and $5<>'' and $6<>'' and $7<>''
+                    then now() else profile_completed_at end,
+                updated_at = now()
+            where id=$1 returning *`,
+            [id, String(d.businessName || '').trim(), String(d.businessId || '').trim(),
+             String(d.contactName || '').trim(), String(d.phone || '').trim(),
+             String(d.email || '').trim(), String(d.address || '').trim()]);
+        if (!rows.length) return send(res, 404);
+        return send(res, 200, bookOut(rows[0]));
     }
 
     // ===== השבתה והפעלה של מיישם =====
@@ -323,6 +376,147 @@ async function route(req, res, url, who) {
             if (who.role !== 'admin' && !(who.role === 'implementer' && who.pricebookId === target))
                 return send(res, 403, { error: 'forbidden' });
             await pool.query('delete from quotes where id=$1', [id]);
+            return send(res, 204);
+        }
+    }
+
+    // ===== הצעות מחיר =====
+    const PROPOSAL_STATUSES = ['open','approved','won','lost','expired'];
+
+    // בודק אם ליד תפוס: הצעה פתוחה/מאושרת של מיישם אחר, בתוך חלון השמירה, לאותו שם לקוח
+    const findLeadConflict = async (proposalId, pricebookId, clientName) => {
+        const { rows } = await pool.query(`
+            select pr.id, pr.pricebook_id, pr.retention_expires_at, p.label, p.implementer_name
+            from proposals pr join pricebooks p on p.id = pr.pricebook_id
+            where pr.id <> $1 and pr.pricebook_id <> $2
+              and lower(trim(pr.client_name)) = lower(trim($3))
+              and pr.status in ('open','approved')
+              and pr.retention_expires_at > now()
+            order by pr.created_at asc limit 1`,
+            [proposalId || '', pricebookId, clientName]);
+        if (!rows.length) return null;
+        const r = rows[0];
+        return { pricebookId: r.pricebook_id, pricebookLabel: r.label,
+                 implementerName: r.implementer_name, retentionExpiresAt: r.retention_expires_at };
+    };
+
+    if (seg[0] === 'proposals' && seg.length === 1 && m === 'GET') {
+        const filter = url.searchParams.get('pricebookId');
+        let rows;
+        if (who.role === 'admin') {
+            rows = (await pool.query(`
+                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
+                join pricebooks p on p.id=pr.pricebook_id
+                ${filter ? 'where pr.pricebook_id=$1' : ''}
+                order by pr.updated_at desc limit 1000`, filter ? [filter] : [])).rows;
+        } else if (who.role === 'implementer') {
+            rows = (await pool.query(`
+                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
+                join pricebooks p on p.id=pr.pricebook_id
+                where pr.pricebook_id=$1 order by pr.updated_at desc limit 1000`, [who.pricebookId])).rows;
+        } else return send(res, 403, { error: 'forbidden' });
+        return send(res, 200, rows.map(proposalOut));
+    }
+
+    if (seg[0] === 'proposals' && seg[2] === 'reassign' && seg.length === 3 && m === 'PUT') {
+        if (who.role !== 'admin') return send(res, 403, { error: 'forbidden' });
+        const d = await readBody(req);
+        if (!d.pricebookId) return send(res, 400, { error: 'pricebookId is required' });
+        const target = await pool.query('select id from pricebooks where id=$1', [d.pricebookId]);
+        if (!target.rows.length) return send(res, 400, { error: 'target pricebook not found' });
+        const { rows } = await pool.query(`
+            update proposals set pricebook_id=$2, updated_at=now() where id=$1
+            returning *`, [seg[1], d.pricebookId]);
+        if (!rows.length) return send(res, 404);
+        const full = await pool.query(`
+            select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
+            join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [seg[1]]);
+        return send(res, 200, proposalOut(full.rows[0]));
+    }
+
+    if (seg[0] === 'proposals' && seg[2] === 'retention' && seg.length === 3 && m === 'PUT') {
+        if (who.role !== 'admin') return send(res, 403, { error: 'forbidden' });
+        const d = await readBody(req);
+        const days = Number(d.extendByDays);
+        if (!Number.isFinite(days) || days <= 0) return send(res, 400, { error: 'extendByDays must be a positive number' });
+        const { rows } = await pool.query(`
+            update proposals set
+                retention_expires_at = greatest(retention_expires_at, now()) + make_interval(days => $2::int),
+                updated_at = now()
+            where id=$1 returning *`, [seg[1], days]);
+        if (!rows.length) return send(res, 404);
+        const full = await pool.query(`
+            select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
+            join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [seg[1]]);
+        return send(res, 200, proposalOut(full.rows[0]));
+    }
+
+    if (seg[0] === 'proposals' && seg.length === 2) {
+        const id = seg[1];
+        const owned = async () => {
+            const { rows } = await pool.query('select pricebook_id from proposals where id=$1', [id]);
+            return rows.length ? rows[0].pricebook_id : null;
+        };
+        if (m === 'GET') {
+            const { rows } = await pool.query(`
+                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
+                join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [id]);
+            if (!rows.length) return send(res, 404);
+            if (who.role !== 'admin' && !(who.role === 'implementer' && who.pricebookId === rows[0].pricebook_id))
+                return send(res, 403, { error: 'forbidden' });
+            return send(res, 200, proposalOut(rows[0]));
+        }
+        if (m === 'PUT') {
+            const d = await readBody(req);
+            const target = d.pricebookId || (await owned());
+            if (who.role !== 'admin' && !(who.role === 'implementer' && who.pricebookId === target))
+                return send(res, 403, { error: 'forbidden' });
+            if (!d.clientName) return send(res, 400, { error: 'clientName is required' });
+            const status = PROPOSAL_STATUSES.includes(d.status) ? d.status : 'open';
+            const isNew = !(await owned());
+            const proposalId = d.id || newId('pr');
+            const retentionDays = Number(d.retentionDays) > 0 ? Number(d.retentionDays) : 14;
+            const { rows } = await pool.query(`
+                insert into proposals
+                    (id, pricebook_id, source_quote_id, created_by, client_name, client_business_id,
+                     client_contact_name, client_phone, client_email, client_address,
+                     intro_text, terms_text, closing_text, selection, totals, status,
+                     retention_days, retention_expires_at, updated_at)
+                values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+                        now() + make_interval(days => $17::int), now())
+                on conflict (id) do update set
+                    pricebook_id=excluded.pricebook_id, client_name=excluded.client_name,
+                    client_business_id=excluded.client_business_id,
+                    client_contact_name=excluded.client_contact_name,
+                    client_phone=excluded.client_phone, client_email=excluded.client_email,
+                    client_address=excluded.client_address,
+                    intro_text=excluded.intro_text, terms_text=excluded.terms_text,
+                    closing_text=excluded.closing_text, selection=excluded.selection,
+                    totals=excluded.totals, status=excluded.status, updated_at=now()
+                returning *`,
+                [proposalId, target, d.sourceQuoteId || null,
+                 who.role === 'admin' ? 'admin' : 'implementer',
+                 d.clientName, d.clientBusinessId || null, d.clientContactName || null,
+                 d.clientPhone || null, d.clientEmail || null, d.clientAddress || null,
+                 d.introText || null, d.termsText || null, d.closingText || null,
+                 d.selection || {}, d.totals || {}, status, retentionDays]);
+            const full = await pool.query(`
+                select pr.*, p.label as pricebook_label, p.implementer_name from proposals pr
+                join pricebooks p on p.id=pr.pricebook_id where pr.id=$1`, [rows[0].id]);
+            const out = proposalOut(full.rows[0]);
+            // מתריע על התנגשות ליד רק לאחר שהשמירה כבר הצליחה, לא חוסם אותה
+            if (isNew) {
+                const conflict = await findLeadConflict(rows[0].id, target, d.clientName);
+                if (conflict) out.leadWarning = conflict;
+            }
+            return send(res, 200, out);
+        }
+        if (m === 'DELETE') {
+            const target = await owned();
+            if (!target) return send(res, 404);
+            if (who.role !== 'admin' && !(who.role === 'implementer' && who.pricebookId === target))
+                return send(res, 403, { error: 'forbidden' });
+            await pool.query('delete from proposals where id=$1', [id]);
             return send(res, 204);
         }
     }

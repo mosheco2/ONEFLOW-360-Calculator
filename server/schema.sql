@@ -52,3 +52,48 @@ create table if not exists sessions (
     expires_at   timestamptz not null
 );
 create index if not exists sessions_expiry_idx on sessions (expires_at);
+
+
+-- ============================================================
+--  פרופיל מיישם (חובה) והצעות מחיר
+-- ============================================================
+
+-- פרטי הפרופיל שהמיישם ממלא בכניסה הראשונה. נפרדים משם המחירון
+-- ומשם המיישם שהמנהל בחר בעת היצירה, כדי לא לדרוס אותם.
+alter table pricebooks add column if not exists profile_business_name text;
+alter table pricebooks add column if not exists profile_business_id   text;
+alter table pricebooks add column if not exists profile_contact_name text;
+alter table pricebooks add column if not exists profile_phone        text;
+alter table pricebooks add column if not exists profile_email        text;
+alter table pricebooks add column if not exists profile_address      text;
+alter table pricebooks add column if not exists profile_completed_at timestamptz;
+
+-- הצעות מחיר - מסמך רשמי הנוצר מתוך אומדן, עם פרטי לקוח מלאים,
+-- שלושה בלוקי טקסט, וסטטוס. האומדן המקורי (בטבלת quotes) אינו
+-- נמחק ואינו משתנה בעת ההמרה.
+create table if not exists proposals (
+    id                  text primary key,
+    pricebook_id        text        not null references pricebooks(id) on delete cascade,
+    source_quote_id     text,
+    created_by          text        not null default 'implementer', -- 'admin' | 'implementer'
+    client_name         text        not null,
+    client_business_id  text,
+    client_contact_name text,
+    client_phone        text,
+    client_email        text,
+    client_address      text,
+    intro_text          text,
+    terms_text          text,
+    closing_text        text,
+    selection           jsonb       not null default '{}'::jsonb,
+    totals              jsonb       not null default '{}'::jsonb,
+    status              text        not null default 'open'
+                             check (status in ('open','approved','won','lost','expired')),
+    retention_days       integer    not null default 14,
+    retention_expires_at timestamptz not null default (now() + interval '14 days'),
+    created_at          timestamptz not null default now(),
+    updated_at          timestamptz not null default now()
+);
+create index if not exists proposals_book_idx   on proposals (pricebook_id, updated_at desc);
+create index if not exists proposals_client_idx on proposals (lower(trim(client_name)));
+create index if not exists proposals_status_idx on proposals (status);

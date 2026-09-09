@@ -1143,6 +1143,36 @@
             );
         };
 
+        // רכיב מדרגה (+/-) - מוגדר מחוץ ל-App כדי לשמור על זהות יציבה בין רינדורים.
+        // הגדרה בפנים הייתה גורמת ל-React להחשיב אותו כרכיב חדש בכל הקלדה,
+        // ולפרק ולבנות מחדש את שדה הקלט - מה שגורם לאיבוד הפוקוס אחרי כל תו.
+        const Stepper = ({ value, onChange, min = 0 }) => (
+            <div className="flex items-center gap-2">
+                <button onClick={() => onChange(Math.max(min, value - 1))}
+                    className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center">−</button>
+                <input type="number" min={min} value={value}
+                    onChange={e => onChange(Math.max(min, Number(e.target.value) || 0))}
+                    className="w-16 text-center p-2 border rounded-lg font-black bg-white" />
+                <button onClick={() => onChange(value + 1)}
+                    className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center">+</button>
+            </div>
+        );
+
+        // שדות טופס פרופיל, בשימוש גם בשער החובה וגם בטאב "הפרטים שלי".
+        // מוגדר מחוץ ל-App מאותה סיבה בדיוק - למנוע איבוד פוקוס תוך כדי הקלדה.
+        const ProfileFormFields = ({ value, onChange }) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-right">
+                {PROFILE_FIELDS.map(k => (
+                    <div key={k} className={k === 'address' ? 'md:col-span-2' : ''}>
+                        <label className="text-xs font-bold text-slate-600 mb-1 block">{PROFILE_LABELS[k]} *</label>
+                        <input value={value[k] || ''} onChange={e => onChange({ ...value, [k]: e.target.value })}
+                            dir={k === 'phone' || k === 'email' ? 'ltr' : 'auto'}
+                            className="w-full p-3 border rounded-xl bg-white" />
+                    </div>
+                ))}
+            </div>
+        );
+
         function App() {
             const [bootReady, setBootReady] = useState(false);
             const [storage, setStorage] = useState(null);
@@ -2261,32 +2291,6 @@
             };
 
             // כפתור מדרגה (+/-)
-            const Stepper = ({ value, onChange, min = 0 }) => (
-                <div className="flex items-center gap-2">
-                    <button onClick={() => onChange(Math.max(min, value - 1))}
-                        className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center">−</button>
-                    <input type="number" min={min} value={value}
-                        onChange={e => onChange(Math.max(min, Number(e.target.value) || 0))}
-                        className="w-16 text-center p-2 border rounded-lg font-black bg-white" />
-                    <button onClick={() => onChange(value + 1)}
-                        className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-black flex items-center justify-center">+</button>
-                </div>
-            );
-
-            // שדות טופס פרופיל, בשימוש גם בשער החובה וגם בטאב "הפרטים שלי"
-            const ProfileFormFields = ({ value, onChange }) => (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-right">
-                    {PROFILE_FIELDS.map(k => (
-                        <div key={k} className={k === 'address' ? 'md:col-span-2' : ''}>
-                            <label className="text-xs font-bold text-slate-600 mb-1 block">{PROFILE_LABELS[k]} *</label>
-                            <input value={value[k] || ''} onChange={e => onChange({ ...value, [k]: e.target.value })}
-                                dir={k === 'phone' || k === 'email' ? 'ltr' : 'auto'}
-                                className="w-full p-3 border rounded-xl bg-white" />
-                        </div>
-                    ))}
-                </div>
-            );
-
             if (!bootReady || loadState === 'loading' || !book) {
                 return (
                     <div dir="rtl" className="min-h-screen bg-slate-50 flex items-center justify-center">

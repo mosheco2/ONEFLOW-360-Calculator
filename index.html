@@ -1756,6 +1756,37 @@
                 } catch (e) { alert('השחזור נכשל: ' + (e.message || e)); }
             };
 
+            // העתקה ללוח - בדפדפנים מסוימים (בעיקר בנייד) navigator.clipboard לא זמין
+            // או נכשל בלי שגיאה גלויה. יש כאן גם נפילה לאחור וגם משוב ברור למשתמש,
+            // כדי שלא ייראה כאילו הכפתור "לא מגיב".
+            const [copyToast, setCopyToast] = useState('');
+            const copyText = async (text) => {
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(text);
+                        return true;
+                    }
+                    throw new Error('no clipboard api');
+                } catch {
+                    try {
+                        const ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.focus(); ta.select();
+                        const ok = document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        return ok;
+                    } catch { return false; }
+                }
+            };
+            const copyWithFeedback = async (text, label) => {
+                const ok = await copyText(text);
+                if (ok) { setCopyToast(label || 'הועתק ללוח'); setTimeout(() => setCopyToast(''), 1800); }
+                else { window.prompt('ההעתקה האוטומטית נכשלה. אפשר להעתיק ידנית מכאן:', text); }
+            };
+
             const [connTest, setConnTest] = useState(null);
 
             // בדיקת חיבור: שולחת בקשה אמיתית עם כל הכותרות ומדווחת מה חזר
@@ -3118,6 +3149,13 @@
                         </div>
                     </main>
 
+                    {/* הודעת "הועתק" - משוב לפעולות העתקה ללוח */}
+                    {copyToast && (
+                        <div className="no-print fixed bottom-6 left-1/2 -translate-x-1/2 z-[90] bg-slate-900 text-white text-sm font-bold px-5 py-2.5 rounded-full shadow-2xl flex items-center gap-2">
+                            <Icon name="check-circle-2" size={16} className="text-emerald-400" /> {copyToast}
+                        </div>
+                    )}
+
                     {/* Mobile Floating Button */}
                     <div className="no-print fixed bottom-4 left-4 right-4 lg:hidden z-40">
                         <button onClick={() => setShowSummary(true)}
@@ -3869,7 +3907,7 @@
                                                             <div className="flex gap-2">
                                                                 <input readOnly dir="ltr" value={genResult.link}
                                                                     className="flex-grow p-2.5 border rounded-lg bg-white font-bold text-xs" />
-                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.link)}
+                                                                <button onClick={() => copyWithFeedback(genResult.link, 'הקישור הועתק')}
                                                                     className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
                                                             </div>
                                                         </div>
@@ -3878,7 +3916,7 @@
                                                             <div className="flex gap-2">
                                                                 <input readOnly dir="ltr" value={genResult.password}
                                                                     className="flex-grow p-2.5 border rounded-lg bg-white font-black" />
-                                                                <button onClick={() => navigator.clipboard?.writeText(genResult.password)}
+                                                                <button onClick={() => copyWithFeedback(genResult.password, 'הסיסמה הועתקה')}
                                                                     className="px-4 rounded-lg bg-white border font-bold text-xs">העתק</button>
                                                             </div>
                                                         </div>
@@ -3923,7 +3961,7 @@
                                                                 className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg whitespace-nowrap">
                                                                 {expandedPartnerId === b.id ? 'סגור פרטים' : 'פרטים'}
                                                             </button>
-                                                            <button onClick={() => navigator.clipboard?.writeText(window.location.origin + window.location.pathname + '?p=' + b.id)}
+                                                            <button onClick={() => copyWithFeedback(window.location.origin + window.location.pathname + '?p=' + b.id, 'הקישור הועתק')}
                                                                 className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg whitespace-nowrap">העתק קישור</button>
                                                             <button onClick={() => resetBookPassword(b.id)}
                                                                 className="text-xs font-bold text-slate-600 bg-white border px-3 py-2 rounded-lg whitespace-nowrap">סיסמה חדשה</button>
@@ -4146,11 +4184,11 @@
                                                     extraHeaders: backendCfg.extraHeaders
                                                 }, null, 2) + ','}
                                                 className="w-full p-3 border rounded-xl bg-white font-mono text-[11px]" />
-                                            <button onClick={() => navigator.clipboard?.writeText('"backend": ' + JSON.stringify({
+                                            <button onClick={() => copyWithFeedback('"backend": ' + JSON.stringify({
                                                     baseUrl: backendCfg.baseUrl,
                                                     orgSlug: backendCfg.orgSlug,
                                                     extraHeaders: backendCfg.extraHeaders
-                                                }, null, 2) + ',')}
+                                                }, null, 2) + ',', 'הקטע הועתק')}
                                                 className="mt-2 px-4 py-2 rounded-lg bg-white border font-bold text-xs">העתק קטע</button>
                                             <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
                                                 כתובת השרת שהאתר מפרסם כרגע: <span className="font-black">{SHIPPED_BACKEND.baseUrl || 'לא מוגדרת'}</span>.

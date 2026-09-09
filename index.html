@@ -639,6 +639,19 @@
             } catch {}
         };
 
+        // אסימון כניסת מנהל בסיסמה - כללי, לא תלוי בקישור אישי. פעם אחת
+        // בדפדפן הזה, ואז אין צורך יותר להעתיק את מפתח הגישה הגולמי.
+        const ADMIN_SESSION_KEY = 'oneflow_admin_session';
+        const readAdminSessionToken = () => {
+            try { return localStorage.getItem(ADMIN_SESSION_KEY) || ''; } catch { return ''; }
+        };
+        const writeAdminSessionToken = (token) => {
+            try {
+                if (token) localStorage.setItem(ADMIN_SESSION_KEY, token);
+                else localStorage.removeItem(ADMIN_SESSION_KEY);
+            } catch {}
+        };
+
         const nowIso = () => new Date().toISOString();
         const newId = (p) => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -918,7 +931,11 @@
                 db.proposals[pbKey][id] = found;
                 this._write(db);
                 return this._decorateProposal(db, pbKey, found);
-            }
+            },
+            // --- כניסת מנהל בסיסמה - רלוונטי רק כשיש שרת. במצב מקומי אין מה לאבטח ---
+            async adminStatus() { return { hasPassword: false }; },
+            async adminLogin() { return { ok: false, error: 'no_password_set' }; },
+            async adminSetPassword() { return { ok: false, error: 'forbidden' }; }
         };
 
         // --- מתאם שרת: מופעל ברגע שמוגדרת כתובת ---
@@ -927,8 +944,9 @@
             isConnected: true,
             baseUrl: cfg.baseUrl,
             async _call(path, options = {}) {
-                // מפתח הניהול (אם הוזן) גובר; אחרת נשלח אסימון הכניסה של המיישם, אם קיים
-                const effectiveCfg = { ...cfg, token: cfg.token || readSessionToken() };
+                // סדר עדיפות: מפתח גישה גולמי שהוזן ידנית (גיבוי/איפוס) > כניסת מנהל
+                // בסיסמה שנשמרה בדפדפן הזה > אסימון הכניסה של המיישם/מחירון, אם קיים
+                const effectiveCfg = { ...cfg, token: cfg.token || readAdminSessionToken() || readSessionToken() };
                 const res = await fetch(this.baseUrl + path, {
                     ...options,
                     headers: buildHeaders(effectiveCfg, options.headers)
@@ -1030,6 +1048,30 @@
                 return this._call('/proposals/' + encodeURIComponent(id) + '/retention', {
                     method: 'PUT', body: JSON.stringify({ extendByDays: days })
                 });
+            },
+            // --- כניסת מנהל בסיסמה (מעל מפתח הגישה הגולמי) ---
+            async adminStatus() { return this._call('/admin/status'); },
+            async adminLogin(password) {
+                let r;
+                try {
+                    r = await this._call('/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
+                } catch (e) {
+                    // סיסמה שגויה (401) וטרם הוגדרה סיסמה (400) הן תשובות רגילות, לא שגיאת שרת
+                    if (e && e.status === 400) return { ok: false, error: 'no_password_set' };
+                    if (e && e.status === 401) return { ok: false, error: 'bad password' };
+                    throw e;
+                }
+                if (r && r.ok && r.token) writeAdminSessionToken(r.token);
+                return r || { ok: false, error: 'bad password' };
+            },
+            async adminSetPassword(password) {
+                try {
+                    return await this._call('/admin/password', { method: 'PUT', body: JSON.stringify({ password }) });
+                } catch (e) {
+                    if (e && e.status === 403) return { ok: false, error: 'forbidden' };
+                    if (e && e.status === 400) return { ok: false, error: 'too_short' };
+                    throw e;
+                }
             }
         });
 
@@ -1132,7 +1174,12 @@
             const [tab, setTab] = useState('quote');         // quote | master
 
             const isMasterBook = !PARTNER_ID;
-            const config = (book && book.config) || DEFAULT_CONFIG;
+            // מחירונים שנשמרו לפני שנוסף proposalDefaults (בשרת אמיתי, בין השאר) יגיעו בלעדיו -
+            // מוסיפים ברירת מחדל כאן, כדי לא לקרוס במסך ההגדרות. שמירה חוזרת תתקן את זה לצמיתות.
+            const config = (() => {
+                const c = (book && book.config) || DEFAULT_CONFIG;
+                return c.proposalDefaults ? c : { ...c, proposalDefaults: DEFAULT_CONFIG.proposalDefaults };
+            })();
 
             // ---------- טעינת מסמך המחירון ----------
             const fetchStatic = (url) => fetch(url + '?t=' + Date.now(), { cache: 'no-store' })
@@ -1689,6 +1736,68 @@
                 } catch (e) {
                     setConnTest({ ok: false, msg: 'לא ניתן להגיע לשרת: ' + (e.message || e), sent: Object.keys(headers) });
                 }
+            };
+
+            // ---------- כניסת מנהל בסיסמה ----------
+            // שכבה נוחה מעל מפתח הגישה הגולמי: לאחר שמוגדרת סיסמה, ניתן
+            // להתחבר איתה מכל מכשיר בלי להעתיק את המפתח בכל פעם.
+            const [adminHasPassword, setAdminHasPassword] = useState(null); // null = טרם נבדק
+            const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => !!readAdminSessionToken());
+            const [adminLoginPw, setAdminLoginPw] = useState('');
+            const [adminLoginMsg, setAdminLoginMsg] = useState(null);
+            const [adminLoginBusy, setAdminLoginBusy] = useState(false);
+            const [adminNewPw, setAdminNewPw] = useState('');
+            const [adminNewPwMsg, setAdminNewPwMsg] = useState(null);
+            const [adminNewPwBusy, setAdminNewPwBusy] = useState(false);
+
+            const refreshAdminStatus = async () => {
+                if (!storage || storage.name !== 'api') return;
+                try { const r = await storage.adminStatus(); setAdminHasPassword(!!(r && r.hasPassword)); }
+                catch { setAdminHasPassword(null); }
+            };
+            useEffect(() => {
+                if (!isAdminOpen || !storage || storage.name !== 'api') return;
+                refreshAdminStatus();
+            }, [isAdminOpen, storage]);
+
+            const doAdminLogin = async () => {
+                if (!adminLoginPw) return;
+                setAdminLoginBusy(true); setAdminLoginMsg(null);
+                try {
+                    const r = await storage.adminLogin(adminLoginPw);
+                    if (r && r.ok) {
+                        // רענון מלא, כדי שכל הבקשות הבאות ישתמשו מייד באסימון החדש
+                        window.location.reload();
+                        return;
+                    }
+                    setAdminLoginMsg({ ok: false, text: r && r.error === 'no_password_set'
+                        ? 'טרם הוגדרה סיסמת מנהל. הזן למטה את מפתח הגישה הגולמי (מרנדר) כדי להגדיר סיסמה.'
+                        : 'סיסמה שגויה.' });
+                } catch (e) { setAdminLoginMsg({ ok: false, text: 'הכניסה נכשלה: ' + (e.message || e) }); }
+                setAdminLoginBusy(false);
+            };
+
+            const doAdminSetPassword = async () => {
+                if (!adminNewPw || adminNewPw.length < 4) { setAdminNewPwMsg({ ok: false, text: 'סיסמה חייבת להכיל 4 תווים לפחות.' }); return; }
+                setAdminNewPwBusy(true); setAdminNewPwMsg(null);
+                try {
+                    const r = await storage.adminSetPassword(adminNewPw);
+                    if (r && r.ok) {
+                        setAdminNewPwMsg({ ok: true, text: 'הסיסמה נקבעה בהצלחה.' });
+                        setAdminNewPw('');
+                        await refreshAdminStatus();
+                    } else {
+                        setAdminNewPwMsg({ ok: false, text: r && r.error === 'forbidden'
+                            ? 'אין הרשאה. יש להזין קודם את מפתח הגישה הגולמי בשדה "מפתח גישה" למעלה, או להתחבר כבר כמנהל.'
+                            : 'הקביעה נכשלה.' });
+                    }
+                } catch (e) { setAdminNewPwMsg({ ok: false, text: 'הקביעה נכשלה: ' + (e.message || e) }); }
+                setAdminNewPwBusy(false);
+            };
+
+            const doAdminLogout = () => {
+                writeAdminSessionToken('');
+                window.location.reload();
             };
 
             // טאבים במסך הניהול. הגדרות המערכת והמיישמים גלויות רק במחירון המאסטר.
@@ -3941,6 +4050,67 @@
                                             </p>
                                         </div>
                                     </div>
+
+                                    {/* כניסת מנהל בסיסמה - נוחה יותר ממפתח גישה גולמי, ועובדת מכל מכשיר */}
+                                    {backendCfg.baseUrl && (
+                                        <div className={`p-6 rounded-3xl border-2 ${isAdminLoggedIn ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+                                            <h3 className="font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
+                                                <Icon name="key" size={20} /> כניסת מנהל
+                                            </h3>
+                                            <p className="text-sm text-slate-600 mb-4">
+                                                במקום להעתיק את מפתח הגישה הגולמי בכל מכשיר, אפשר לקבוע כאן סיסמת מנהל פשוטה ולהתחבר איתה מכל מקום.
+                                                מפתח הגישה הגולמי (משדה "מפתח גישה" למעלה) ממשיך לעבוד תמיד, כערוץ גיבוי אם הסיסמה תישכח.
+                                            </p>
+
+                                            {isAdminLoggedIn ? (
+                                                <div className="flex flex-wrap items-center gap-3 bg-emerald-100 border border-emerald-300 rounded-xl p-4">
+                                                    <Icon name="check-circle-2" size={18} className="text-emerald-700" />
+                                                    <span className="font-bold text-emerald-800 flex-grow">מחובר כמנהל בדפדפן הזה.</span>
+                                                    <button onClick={doAdminLogout}
+                                                        className="text-xs font-bold text-red-600 bg-white border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50">התנתק</button>
+                                                </div>
+                                            ) : (
+                                                <div className="bg-slate-50 border rounded-xl p-4 mb-4">
+                                                    <div className="text-sm font-bold text-slate-700 mb-2">התחברות</div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <input type="password" value={adminLoginPw} dir="ltr"
+                                                            onChange={e => { setAdminLoginPw(e.target.value); setAdminLoginMsg(null); }}
+                                                            onKeyDown={e => { if (e.key === 'Enter') doAdminLogin(); }}
+                                                            placeholder="סיסמת מנהל" className="flex-grow min-w-[160px] p-3 border rounded-xl bg-white font-bold" />
+                                                        <button onClick={doAdminLogin} disabled={adminLoginBusy || !adminLoginPw}
+                                                            className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-700 disabled:opacity-50">
+                                                            {adminLoginBusy ? 'מתחבר…' : 'התחבר'}
+                                                        </button>
+                                                    </div>
+                                                    {adminLoginMsg && (
+                                                        <p className={`text-xs font-bold mt-2 ${adminLoginMsg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{adminLoginMsg.text}</p>
+                                                    )}
+                                                    {adminHasPassword === false && !adminLoginMsg && (
+                                                        <p className="text-xs font-bold text-amber-700 mt-2">טרם הוגדרה סיסמת מנהל - קבע אחת למטה.</p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="bg-slate-50 border rounded-xl p-4">
+                                                <div className="text-sm font-bold text-slate-700 mb-1">קביעת סיסמה חדשה</div>
+                                                <p className="text-[11px] text-slate-500 mb-2">
+                                                    בפעם הראשונה יש להזין קודם את מפתח הגישה הגולמי בשדה "מפתח גישה" למעלה, כדי לאשר את הקביעה. אחר כך אפשר לשנות אותה מכאן בכל עת.
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <input type="password" value={adminNewPw} dir="ltr"
+                                                        onChange={e => { setAdminNewPw(e.target.value); setAdminNewPwMsg(null); }}
+                                                        placeholder="סיסמה חדשה (4+ תווים)" className="flex-grow min-w-[160px] p-3 border rounded-xl bg-white font-bold" />
+                                                    <button onClick={doAdminSetPassword} disabled={adminNewPwBusy || !adminNewPw}
+                                                        className="px-6 py-2.5 rounded-xl font-bold text-slate-700 bg-white border hover:bg-slate-100 disabled:opacity-50">
+                                                        {adminNewPwBusy ? 'קובע…' : (adminHasPassword ? 'שנה סיסמה' : 'קבע סיסמה')}
+                                                    </button>
+                                                </div>
+                                                {adminNewPwMsg && (
+                                                    <p className={`text-xs font-bold mt-2 ${adminNewPwMsg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{adminNewPwMsg.text}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     </>)}
                                 </div>

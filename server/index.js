@@ -67,6 +67,10 @@ async function identify(req) {
             Buffer.from(ADMIN_TOKEN.padEnd(128).slice(0, 128)))) {
         return { role: 'admin' };
     }
+    // אסימון כניסת מנהל בסיסמה (POST /admin/login) - מעניק אותה הרשאה מלאה כמו המפתח הגולמי
+    const adminSess = await pool.query(
+        'select 1 from admin_sessions where token=$1 and expires_at > now()', [token]);
+    if (adminSess.rows.length) return { role: 'admin' };
     const { rows } = await pool.query(
         'select pricebook_id from sessions where token=$1 and expires_at > now()', [token]);
     if (rows.length) return { role: 'implementer', pricebookId: rows[0].pricebook_id };
@@ -126,6 +130,42 @@ async function route(req, res, url, who) {
     const m = req.method;
 
     if (seg[0] === 'health') return send(res, 200, { ok: true, org: ORG_SLUG });
+
+    // ===== כניסת מנהל בסיסמה =====
+    // שכבה נוחה מעל מפתח הגישה הגולמי: אחרי שמוגדרת סיסמה, המנהל יכול
+    // להתחבר איתה מכל מכשיר, בלי להעתיק את המפתח הארוך בכל פעם. המפתח
+    // הגולמי (ADMIN_TOKEN) עדיין עובד תמיד, כערוץ גיבוי/איפוס.
+    if (seg[0] === 'admin' && seg[1] === 'status' && seg.length === 2 && m === 'GET') {
+        const { rows } = await pool.query('select hash from admin_credentials where id=$1', ['admin']);
+        return send(res, 200, { hasPassword: !!(rows.length && rows[0].hash) });
+    }
+    if (seg[0] === 'admin' && seg[1] === 'login' && seg.length === 2 && m === 'POST') {
+        const body = await readBody(req);
+        const { rows } = await pool.query('select * from admin_credentials where id=$1', ['admin']);
+        const cred = rows[0];
+        if (!cred || !cred.hash) return send(res, 400, { ok: false, error: 'no_password_set' });
+        const ok = hashPassword(body.password || '', cred.salt) === cred.hash;
+        if (!ok) return send(res, 401, { ok: false, error: 'bad password' });
+        const token = newToken();
+        const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+        await pool.query('insert into admin_sessions (token, expires_at) values ($1,$2)', [token, expiresAt]);
+        return send(res, 200, { ok: true, token, expiresAt });
+    }
+    if (seg[0] === 'admin' && seg[1] === 'password' && seg.length === 2 && m === 'PUT') {
+        if (who.role !== 'admin') return send(res, 403, { error: 'forbidden' });
+        const body = await readBody(req);
+        if (!body.password || String(body.password).length < 4) {
+            return send(res, 400, { error: 'password must be at least 4 characters' });
+        }
+        const salt = crypto.randomBytes(16).toString('hex');
+        const hash = hashPassword(body.password, salt);
+        await pool.query(`
+            insert into admin_credentials (id, salt, hash, password_changed_at)
+            values ('admin', $1, $2, now())
+            on conflict (id) do update set salt=excluded.salt, hash=excluded.hash, password_changed_at=now()`,
+            [salt, hash]);
+        return send(res, 200, { ok: true });
+    }
 
     // ===== אימות סיסמה =====
     // תמיד מנפיק אסימון כניסה בהצלחה, גם כאשר לא הוגדרה סיסמה למחירון -

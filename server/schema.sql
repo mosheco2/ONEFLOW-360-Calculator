@@ -55,6 +55,28 @@ create index if not exists sessions_expiry_idx on sessions (expires_at);
 
 
 -- ============================================================
+--  כניסת מנהל בסיסמה - שכבה נוספת מעל מפתח הגישה הגולמי (ADMIN_TOKEN),
+--  כדי שהמנהל יוכל להתחבר עם סיסמה פשוטה מכל מכשיר, במקום להעתיק
+--  את המפתח הארוך בכל פעם. המפתח הגולמי נשאר ככלי גיבוי/איפוס בלבד.
+-- ============================================================
+create table if not exists admin_credentials (
+    id                   text primary key default 'admin',
+    salt                 text,
+    hash                 text,
+    password_changed_at  timestamptz
+);
+insert into admin_credentials (id) values ('admin') on conflict (id) do nothing;
+
+-- אסימוני כניסת מנהל - טבלה נפרדת מ-sessions כי אינם משויכים למחירון מסוים
+create table if not exists admin_sessions (
+    token      text primary key,
+    created_at timestamptz not null default now(),
+    expires_at timestamptz not null
+);
+create index if not exists admin_sessions_expiry_idx on admin_sessions (expires_at);
+
+
+-- ============================================================
 --  פרופיל מיישם (חובה) והצעות מחיר
 -- ============================================================
 

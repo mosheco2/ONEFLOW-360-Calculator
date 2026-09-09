@@ -153,16 +153,21 @@ async function route(req, res, url, who) {
 
     if (seg[0] === 'pricebooks' && seg.length === 2) {
         const id = seg[1];
-        const mayRead  = who.role === 'admin' || id === 'master' ||
-                         (who.role === 'implementer' && who.pricebookId === id);
+        // אסימון שהתקבל מכניסה למאסטר עצמו אינו מקנה כתיבה - רק מפתח הניהול מקנה אותה.
         const mayWrite = who.role === 'admin' ||
-                         (who.role === 'implementer' && who.pricebookId === id);
+                         (who.role === 'implementer' && who.pricebookId === id && id !== 'master');
 
         if (m === 'GET') {
-            if (!mayRead) return send(res, 403, { error: 'forbidden' });
             const { rows } = await pool.query('select * from pricebooks where id=$1', [id]);
             if (!rows.length) return send(res, 404);
-            const out = bookOut(rows[0]);
+            const row = rows[0];
+            // המאסטר פתוח לקריאה לכל מיישם מחובר (דרוש לטאב הסנכרון), וגם ללא אסימון
+            // כלל, כל עוד לא הוגדרה לו סיסמה משלו. ברגע שהוגדרה, אנונימי נחסם.
+            const mayRead = who.role === 'admin' ||
+                            (who.role === 'implementer' && who.pricebookId === id) ||
+                            (id === 'master' && (who.role === 'implementer' || !row.auth_hash));
+            if (!mayRead) return send(res, 403, { error: 'forbidden' });
+            const out = bookOut(row);
             // פרטי ההצפנה נחשפים למנהל בלבד
             if (who.role !== 'admin') out.auth = out.auth ? { salt: '', hash: '' } : null;
             return send(res, 200, out);
@@ -223,8 +228,14 @@ async function route(req, res, url, who) {
     // ===== גרסאות =====
     if (seg[0] === 'pricebooks' && seg[2] === 'versions') {
         const id = seg[1];
-        const mayRead = who.role === 'admin' || id === 'master' ||
-                        (who.role === 'implementer' && who.pricebookId === id);
+        let mayRead = who.role === 'admin' || (who.role === 'implementer' && who.pricebookId === id);
+        if (!mayRead && id === 'master') {
+            mayRead = who.role === 'implementer';
+            if (!mayRead) {
+                const { rows } = await pool.query('select auth_hash from pricebooks where id=$1', [id]);
+                mayRead = rows.length > 0 && !rows[0].auth_hash;
+            }
+        }
         if (!mayRead) return send(res, 403, { error: 'forbidden' });
 
         if (seg.length === 3 && m === 'GET') {

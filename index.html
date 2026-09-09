@@ -619,15 +619,14 @@
 
         // אסימון כניסה של המיישם, מונפק אחרי אימות סיסמה מול השרת.
         // נשמר בנפרד לכל קישור אישי, כדי שכניסה תחת מחירון אחד לא תעניק גישה לאחר.
+        const SESSION_SCOPE = PARTNER_ID || '__master__';
         const readSessionToken = () => {
-            if (!PARTNER_ID) return '';
-            try { return localStorage.getItem('oneflow_session::' + PARTNER_ID) || ''; } catch { return ''; }
+            try { return localStorage.getItem('oneflow_session::' + SESSION_SCOPE) || ''; } catch { return ''; }
         };
         const writeSessionToken = (token) => {
-            if (!PARTNER_ID) return;
             try {
-                if (token) localStorage.setItem('oneflow_session::' + PARTNER_ID, token);
-                else localStorage.removeItem('oneflow_session::' + PARTNER_ID);
+                if (token) localStorage.setItem('oneflow_session::' + SESSION_SCOPE, token);
+                else localStorage.removeItem('oneflow_session::' + SESSION_SCOPE);
             } catch {}
         };
 
@@ -963,8 +962,11 @@
                 let alive = true;
                 (async () => {
                     let masterDoc = null;
-                    try { masterDoc = await storage.get('master'); } catch {}
-                    if (!masterDoc) {
+                    let masterForbidden = false;
+                    try { masterDoc = await storage.get('master'); }
+                    catch (e) { if (e && e.status === 403) masterForbidden = true; }
+
+                    if (!masterDoc && !masterForbidden) {
                         try {
                             const j = await fetchStatic(OFFICIAL_URL);
                             masterDoc = wrapAsBook(j, 'master', 'master');
@@ -974,9 +976,32 @@
                         }
                     }
                     if (!alive) return;
-                    setMaster(masterDoc);
+                    if (masterDoc) setMaster(masterDoc);
 
-                    let doc = masterDoc;
+                    if (!PARTNER_ID) {
+                        // כניסה כמאסטר עצמו - אם הוגדרה למאסטר סיסמה, נדרשת כניסה בדיוק כמו כל מיישם
+                        if (masterForbidden) {
+                            let sum = null;
+                            try { sum = await storage.summary('master'); } catch {}
+                            if (!alive) return;
+                            setBook({
+                                id: 'master', kind: 'master',
+                                label: (sum && sum.label) || 'מחירון מאסטר',
+                                implementerName: '', auth: { salt: '', hash: 'gate' },
+                                config: DEFAULT_CONFIG, version: 1, updatedAt: nowIso()
+                            });
+                            setAuthed(false);
+                            setLoadState('ready');
+                            return;
+                        }
+                        setBook(masterDoc);
+                        setSavedPrint(pricingFingerprint(masterDoc.config));
+                        setAuthed(storage.name === 'local' ? !(masterDoc.auth && masterDoc.auth.hash) : true);
+                        setLoadState('ready');
+                        return;
+                    }
+
+                    let doc = masterDoc || wrapAsBook(DEFAULT_CONFIG, 'master', 'master');
                     let note = '';
                     if (PARTNER_ID) {
                         let found = null;
@@ -999,7 +1024,7 @@
                                 id: PARTNER_ID, kind: 'implementer',
                                 label: (sum && sum.label) || ('מחירון ' + PARTNER_ID),
                                 implementerName: '', auth: { salt: '', hash: 'gate' },
-                                config: masterDoc.config, version: 1, updatedAt: nowIso()
+                                config: (masterDoc && masterDoc.config) || DEFAULT_CONFIG, version: 1, updatedAt: nowIso()
                             });
                             setAuthed(false);
                             setLoadState('ready');
@@ -1009,7 +1034,7 @@
                         if (!found) {
                             if (!alive) return;
                             setLoadState('missing');
-                            setBook({ ...masterDoc, id: PARTNER_ID });
+                            setBook({ ...(masterDoc || wrapAsBook(DEFAULT_CONFIG, 'master', 'master')), id: PARTNER_ID });
                             return;
                         }
                         doc = found;
@@ -1100,6 +1125,10 @@
                     if (storage.name !== 'local') {
                         const full = await storage.get(book.id);
                         if (full) { setBook(full); setSavedPrint(pricingFingerprint(full.config)); }
+                        // אם המאסטר היה חסום קודם (מוגן בסיסמה), הכניסה עכשיו פותחת גישה אליו
+                        if (book.id !== 'master') {
+                            try { const m = await storage.get('master'); if (m) setMaster(m); } catch {}
+                        }
                     }
                     setAuthed(true);
                     setPwInput('');
@@ -1262,7 +1291,10 @@
             };
 
             const resetBookPassword = async (id) => {
-                const pw = window.prompt('סיסמה חדשה למחירון ' + id + ':');
+                const isMaster = id === 'master';
+                const pw = window.prompt(isMaster
+                    ? 'סיסמה חדשה לכניסה למסך המאסטר:'
+                    : 'סיסמה חדשה למחירון ' + id + ':');
                 if (!pw) return;
                 if (pw.length < 4) { alert('סיסמה חייבת להכיל 4 תווים לפחות.'); return; }
                 try {
@@ -1274,7 +1306,9 @@
                     doc.passwordChangedAt = nowIso(); // נקרא במצב מקומי בלבד; בשרת מחושב משם
                     await storage.put(doc);
                     await refreshBooks();
-                    alert('הסיסמה עודכנה. מסור אותה למיישם.');
+                    alert(isMaster
+                        ? 'הסיסמה עודכנה. שמור אותה במקום בטוח - היא הכניסה שלך למסך המאסטר.'
+                        : 'הסיסמה עודכנה. מסור אותה למיישם.');
                 } catch (e) { alert('עדכון הסיסמה נכשל: ' + (e.message || e)); }
             };
 
@@ -3023,6 +3057,32 @@
 
                                     </>)}
                                     {adminTab === 'system' && isMasterBook && (<>
+                                    {/* הגנת מסך המאסטר */}
+                                    {(() => {
+                                        const masterRow = books.find(b => b.id === 'master');
+                                        const hasMasterPw = !!(masterRow && masterRow.hasPassword);
+                                        return (
+                                            <div className={`p-6 rounded-3xl border-2 ${hasMasterPw ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-300'}`}>
+                                                <h3 className="font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
+                                                    <Icon name={hasMasterPw ? 'lock' : 'unlock'} size={20} /> הגנת מסך המאסטר
+                                                </h3>
+                                                <p className={`text-sm font-bold mb-4 ${hasMasterPw ? 'text-emerald-800' : 'text-red-800'}`}>
+                                                    {hasMasterPw
+                                                        ? 'מוגן בסיסמה. מי שנכנס לכתובת הבסיסית (בלי קישור אישי) יתבקש סיסמה לפני שיראה את המחירון או יוכל לפתוח הגדרות.'
+                                                        : 'לא מוגן. כל מי שנכנס לכתובת הבסיסית רואה את המחירון הזה מיד, כולל מיישם שהקליד את הקישור שלו בטעות בלי המזהה האישי. מומלץ לקבוע סיסמה.'}
+                                                </p>
+                                                <button onClick={() => resetBookPassword('master')}
+                                                    className={`px-6 py-2.5 rounded-xl font-bold ${hasMasterPw ? 'bg-white border text-slate-700 hover:bg-slate-50' : 'bg-red-600 text-white hover:bg-red-700'}`}>
+                                                    {hasMasterPw ? 'סיסמה חדשה' : 'קבע סיסמה עכשיו'}
+                                                </button>
+                                                <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+                                                    זו סיסמת כניסה למסך בלבד. עריכת המחירון וכל פעולות הניהול עדיין דורשות
+                                                    את מפתח הגישה שמוזן למטה, גם למי שיודע את הסיסמה הזו.
+                                                </p>
+                                            </div>
+                                        );
+                                    })()}
+
                                     {/* חיבור למסד נתונים */}
                                     <div className={`p-6 rounded-3xl border-2 ${backendCfg.baseUrl ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-100 border-slate-300'}`}>
                                         <h3 className="font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">

@@ -159,5 +159,10 @@
   },
   "customSections": [],
   "publishedAt": "2026-09-08T16:28:53.725Z",
-  "label": "מחירון רשמי - ONEFLOW PRO BUSINESS"
+  "label": "מחירון רשמי - ONEFLOW PRO BUSINESS",
+  "backend": {
+    "baseUrl": "https://oneflow-api-l7xs.onrender.com",
+    "orgSlug": "onebtn_team",
+    "extraHeaders": ""
+  }
 }

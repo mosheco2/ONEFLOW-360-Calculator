@@ -617,6 +617,20 @@
             try { localStorage.setItem(BACKEND_KEY, JSON.stringify(c)); } catch {}
         };
 
+        // אסימון כניסה של המיישם, מונפק אחרי אימות סיסמה מול השרת.
+        // נשמר בנפרד לכל קישור אישי, כדי שכניסה תחת מחירון אחד לא תעניק גישה לאחר.
+        const readSessionToken = () => {
+            if (!PARTNER_ID) return '';
+            try { return localStorage.getItem('oneflow_session::' + PARTNER_ID) || ''; } catch { return ''; }
+        };
+        const writeSessionToken = (token) => {
+            if (!PARTNER_ID) return;
+            try {
+                if (token) localStorage.setItem('oneflow_session::' + PARTNER_ID, token);
+                else localStorage.removeItem('oneflow_session::' + PARTNER_ID);
+            } catch {}
+        };
+
         const nowIso = () => new Date().toISOString();
         const newId = (p) => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -640,8 +654,10 @@
             name: 'local',
             isConnected: false,
             _read() {
-                try { return JSON.parse(localStorage.getItem(LOCAL_DB_KEY) || '{"books":{},"versions":{}}'); }
-                catch { return { books: {}, versions: {} }; }
+                try {
+                    const d = JSON.parse(localStorage.getItem(LOCAL_DB_KEY) || '{}');
+                    return { books: d.books || {}, versions: d.versions || {}, quotes: d.quotes || {} };
+                } catch { return { books: {}, versions: {}, quotes: {} }; }
             },
             _write(db) {
                 try { localStorage.setItem(LOCAL_DB_KEY, JSON.stringify(db)); return true; }
@@ -651,10 +667,18 @@
                 const db = this._read();
                 return Object.values(db.books).map(b => ({
                     id: b.id, label: b.label, kind: b.kind, implementerName: b.implementerName,
-                    updatedAt: b.updatedAt, version: b.version, hasPassword: !!(b.auth && b.auth.hash)
+                    updatedAt: b.updatedAt, version: b.version, hasPassword: !!(b.auth && b.auth.hash),
+                    disabled: !!b.disabled, lastLoginAt: b.lastLoginAt || null,
+                    passwordChangedAt: b.passwordChangedAt || null,
+                    quoteCount: Object.keys(db.quotes[b.id] || {}).length
                 }));
             },
             async get(id) { return this._read().books[id] || null; },
+            async setDisabled(id, disabled) {
+                const db = this._read();
+                if (db.books[id]) { db.books[id].disabled = !!disabled; this._write(db); }
+                return db.books[id] || null;
+            },
             async put(doc) {
                 const db = this._read();
                 db.books[doc.id] = doc;
@@ -685,9 +709,57 @@
             },
             async verifyPassword(id, password) {
                 const book = await this.get(id);
-                if (!book || !book.auth || !book.auth.hash) return true;
-                try { return (await hashPassword(password, book.auth.salt)) === book.auth.hash; }
-                catch { return false; }
+                if (!book) return false;
+                const ok = !book.auth || !book.auth.hash
+                    ? true
+                    : await (async () => { try { return (await hashPassword(password, book.auth.salt)) === book.auth.hash; } catch { return false; } })();
+                if (ok) { book.lastLoginAt = nowIso(); await this.put(book); }
+                return ok;
+            },
+            async summary(id) {
+                const b = await this.get(id);
+                return b && { id: b.id, label: b.label, kind: b.kind, disabled: !!b.disabled, hasPassword: !!(b.auth && b.auth.hash) };
+            },
+            async listQuotes(pricebookId) {
+                const db = this._read();
+                return Object.values(db.quotes[pricebookId] || {}).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+            },
+            async getQuote(pricebookId, id) {
+                const db = this._read();
+                return (db.quotes[pricebookId] || {})[id] || null;
+            },
+            async putQuote(pricebookId, doc) {
+                const db = this._read();
+                db.quotes[pricebookId] = db.quotes[pricebookId] || {};
+                db.quotes[pricebookId][doc.id] = doc;
+                this._write(db);
+                return doc;
+            },
+            async removeQuote(pricebookId, id) {
+                const db = this._read();
+                if (db.quotes[pricebookId]) delete db.quotes[pricebookId][id];
+                this._write(db);
+            },
+            async listLeads() {
+                const db = this._read();
+                const all = [];
+                Object.entries(db.quotes).forEach(([pricebookId, qs]) => {
+                    const book = db.books[pricebookId];
+                    Object.values(qs).forEach(q => all.push({ ...q, pricebookLabel: book ? book.label : pricebookId }));
+                });
+                const norm = (s) => (s || '').trim().toLowerCase();
+                const byClient = {};
+                all.forEach(q => { const k = norm(q.clientName); (byClient[k] = byClient[k] || []).push(q); });
+                return all.map(q => {
+                    const group = byClient[norm(q.clientName)];
+                    const first = group.reduce((a, b) => (a.createdAt < b.createdAt ? a : b));
+                    const implementerCount = new Set(group.map(g => g.pricebookId)).size;
+                    return {
+                        ...q, contested: implementerCount > 1,
+                        clientQuoteCount: group.length, clientImplementerCount: implementerCount,
+                        clientFirstAt: first.createdAt, isFirstForClient: q.id === first.id
+                    };
+                }).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
             }
         };
 
@@ -697,16 +769,23 @@
             isConnected: true,
             baseUrl: cfg.baseUrl,
             async _call(path, options = {}) {
+                // מפתח הניהול (אם הוזן) גובר; אחרת נשלח אסימון הכניסה של המיישם, אם קיים
+                const effectiveCfg = { ...cfg, token: cfg.token || readSessionToken() };
                 const res = await fetch(this.baseUrl + path, {
                     ...options,
-                    headers: buildHeaders(cfg, options.headers)
+                    headers: buildHeaders(effectiveCfg, options.headers)
                 });
                 if (res.status === 404) return null;
-                if (!res.ok) throw new Error('שגיאת שרת ' + res.status);
+                if (!res.ok) {
+                    const err = new Error('שגיאת שרת ' + res.status);
+                    err.status = res.status;
+                    throw err;
+                }
                 return res.status === 204 ? null : res.json();
             },
             async list() { return (await this._call('/pricebooks')) || []; },
             async get(id) { return this._call('/pricebooks/' + encodeURIComponent(id)); },
+            async summary(id) { return this._call('/pricebooks/' + encodeURIComponent(id) + '/summary'); },
             async put(doc) {
                 return this._call('/pricebooks/' + encodeURIComponent(doc.id), {
                     method: 'PUT', body: JSON.stringify(doc)
@@ -714,6 +793,11 @@
             },
             async remove(id) {
                 return this._call('/pricebooks/' + encodeURIComponent(id), { method: 'DELETE' });
+            },
+            async setDisabled(id, disabled) {
+                return this._call('/pricebooks/' + encodeURIComponent(id) + '/disabled', {
+                    method: 'PUT', body: JSON.stringify({ disabled })
+                });
             },
             async listVersions(id) {
                 return (await this._call('/pricebooks/' + encodeURIComponent(id) + '/versions')) || [];
@@ -726,13 +810,36 @@
                     method: 'POST', body: JSON.stringify(entry)
                 });
             },
-            // אימות הסיסמה נעשה בשרת, כך שההצפנה אינה נחשפת בדפדפן
+            // אימות הסיסמה נעשה בשרת, כך שההצפנה אינה נחשפת בדפדפן.
+            // בהצלחה השרת מנפיק אסימון כניסה, גם כשלא הוגדרה סיסמה למחירון.
             async verifyPassword(id, password) {
-                const r = await this._call('/pricebooks/' + encodeURIComponent(id) + '/auth', {
-                    method: 'POST', body: JSON.stringify({ password })
-                });
+                let r;
+                try {
+                    r = await this._call('/pricebooks/' + encodeURIComponent(id) + '/auth', {
+                        method: 'POST', body: JSON.stringify({ password })
+                    });
+                } catch (e) {
+                    // סיסמה שגויה מוחזרת כ-401: כישלון רגיל, לא שגיאת שרת
+                    if (e && e.status === 401) return false;
+                    if (e && e.status === 403) throw new Error('המשתמש הושבת. פנה למי שנתן לך את הקישור.');
+                    throw e;
+                }
+                if (r && r.ok && r.token) writeSessionToken(r.token);
                 return !!(r && r.ok);
-            }
+            },
+            async listQuotes(pricebookId) {
+                return (await this._call('/quotes?pricebookId=' + encodeURIComponent(pricebookId))) || [];
+            },
+            async getQuote(pricebookId, id) { return this._call('/quotes/' + encodeURIComponent(id)); },
+            async putQuote(pricebookId, doc) {
+                return this._call('/quotes/' + encodeURIComponent(doc.id), {
+                    method: 'PUT', body: JSON.stringify({ ...doc, pricebookId })
+                });
+            },
+            async removeQuote(pricebookId, id) {
+                return this._call('/quotes/' + encodeURIComponent(id), { method: 'DELETE' });
+            },
+            async listLeads() { return (await this._call('/leads')) || []; }
         });
 
         const getStorage = () => {
@@ -873,12 +980,32 @@
                     let note = '';
                     if (PARTNER_ID) {
                         let found = null;
-                        try { found = await storage.get(PARTNER_ID); } catch {}
-                        if (!found) {
-                            // תאימות לאחור: מחירון שפורסם כקובץ סטטי
+                        let forbidden = false;
+                        try { found = await storage.get(PARTNER_ID); }
+                        catch (e) { if (e && e.status === 403) forbidden = true; }
+
+                        if (!found && !forbidden) {
+                            // תאימות לאחור: מחירון שפורסם כקובץ סטטי (רלוונטי לאחסון מקומי בלבד)
                             try { found = wrapAsBook(await fetchStatic(PRICEBOOK_URL), PARTNER_ID, 'implementer'); }
                             catch {}
                         }
+
+                        if (forbidden) {
+                            // המחירון קיים בשרת אך דורש כניסה. שולפים תקציר פומבי לשם התצוגה בלבד.
+                            let sum = null;
+                            try { sum = await storage.summary(PARTNER_ID); } catch {}
+                            if (!alive) return;
+                            setBook({
+                                id: PARTNER_ID, kind: 'implementer',
+                                label: (sum && sum.label) || ('מחירון ' + PARTNER_ID),
+                                implementerName: '', auth: { salt: '', hash: 'gate' },
+                                config: masterDoc.config, version: 1, updatedAt: nowIso()
+                            });
+                            setAuthed(false);
+                            setLoadState('ready');
+                            return;
+                        }
+
                         if (!found) {
                             if (!alive) return;
                             setLoadState('missing');
@@ -890,7 +1017,8 @@
                     if (!alive) return;
                     setBook(doc);
                     setSavedPrint(pricingFingerprint(doc.config));
-                    setAuthed(!(doc.auth && doc.auth.hash));
+                    // אחסון מקומי: הדפדפן בודק בעצמו אם יש סיסמה. שרת: ההגעה לכאן כבר עברה אימות שם.
+                    setAuthed(storage.name === 'local' ? !(doc.auth && doc.auth.hash) : true);
                     setLoadNote(note);
                     setLoadState('ready');
                 })().catch(() => { if (alive) setLoadState('error'); });
@@ -967,8 +1095,14 @@
                 setPwError('');
                 try {
                     const ok = await storage.verifyPassword(book.id, pwInput);
-                    if (ok) { setAuthed(true); setPwInput(''); }
-                    else setPwError('סיסמה שגויה.');
+                    if (!ok) { setPwError('סיסמה שגויה.'); return; }
+                    // בשרת, המסמך המלא נגיש רק לאחר שהאסימון נשמר - נשלוף אותו כעת
+                    if (storage.name !== 'local') {
+                        const full = await storage.get(book.id);
+                        if (full) { setBook(full); setSavedPrint(pricingFingerprint(full.config)); }
+                    }
+                    setAuthed(true);
+                    setPwInput('');
                 } catch (err) { setPwError('בדיקת הסיסמה נכשלה: ' + (err.message || err)); }
             };
 
@@ -985,6 +1119,104 @@
                 refreshBooks();
                 refreshVersions();
             }, [isAdminOpen, storage, book && book.id]);
+
+            // ---------- אומדנים על שם לקוח ----------
+            const refreshQuotes = async () => {
+                if (!book || !storage) return;
+                try { setQuotes(await storage.listQuotes(book.id)); } catch { setQuotes([]); }
+            };
+            useEffect(() => {
+                if (tab !== 'quotes' || !book || !storage) return;
+                refreshQuotes();
+            }, [tab, storage, book && book.id]);
+
+            const buildSelection = () => ({
+                clientName, quoteDate, selectedModules, extraTxPacks, hoursOverride,
+                extraUserPacks, customSelections
+            });
+            const applySelection = (sel) => {
+                if (!sel) return;
+                setClientName(sel.clientName || '');
+                setQuoteDate(sel.quoteDate || new Date().toISOString().split('T')[0]);
+                setSelectedModules(sel.selectedModules || []);
+                setExtraTxPacks(sel.extraTxPacks || 0);
+                setHoursOverride(sel.hoursOverride || {});
+                setExtraUserPacks(sel.extraUserPacks || 0);
+                setCustomSelections(sel.customSelections || {});
+            };
+
+            const newQuote = () => {
+                setActiveQuoteId(null);
+                setQuoteNote('');
+                setClientName('');
+                setQuoteDate(new Date().toISOString().split('T')[0]);
+                setSelectedModules([]);
+                setExtraTxPacks(0);
+                setHoursOverride({});
+                setExtraUserPacks(0);
+                setCustomSelections({});
+                setTab('quote');
+            };
+
+            const saveQuote = async () => {
+                if (!book || !storage) return;
+                if (!clientName.trim()) { alert('יש להזין שם לקוח לפני שמירה.'); return; }
+                const id = activeQuoteId || newId('q');
+                const doc = {
+                    id, clientName: clientName.trim(), implementerName: book.implementerName || brand.name || '',
+                    note: quoteNote || '', selection: buildSelection(),
+                    totals: {
+                        totalMRR: totals.totalMRR, totalSetup: totals.totalSetup,
+                        moduleCount: totals.moduleCount, monthlyTx: totals.monthlyTx,
+                        totalUsers: totals.totalUsers
+                    },
+                    updatedAt: nowIso()
+                };
+                try {
+                    const saved = await storage.putQuote(book.id, doc);
+                    setActiveQuoteId(saved.id);
+                    await refreshQuotes();
+                    alert('האומדן נשמר על שם ' + doc.clientName + '.');
+                } catch (e) { alert('שמירת האומדן נכשלה: ' + (e.message || e)); }
+            };
+
+            const openQuote = (q) => {
+                setActiveQuoteId(q.id);
+                setQuoteNote(q.note || '');
+                applySelection(q.selection);
+                setTab('quote');
+            };
+
+            const duplicateQuote = async (q) => {
+                if (!book || !storage) return;
+                const copy = {
+                    id: newId('q'), clientName: q.clientName + ' (עותק)',
+                    implementerName: q.implementerName, note: q.note || '',
+                    selection: q.selection, totals: q.totals, updatedAt: nowIso()
+                };
+                try { await storage.putQuote(book.id, copy); await refreshQuotes(); }
+                catch (e) { alert('השכפול נכשל: ' + (e.message || e)); }
+            };
+
+            const deleteQuote = async (q) => {
+                if (!book || !storage) return;
+                if (!window.confirm('למחוק את האומדן של ' + q.clientName + '? הפעולה אינה הפיכה.')) return;
+                try {
+                    await storage.removeQuote(book.id, q.id);
+                    if (activeQuoteId === q.id) setActiveQuoteId(null);
+                    await refreshQuotes();
+                } catch (e) { alert('המחיקה נכשלה: ' + (e.message || e)); }
+            };
+
+            // ---------- לידים - מחירון המאסטר בלבד ----------
+            const refreshLeads = async () => {
+                if (!storage || !isMasterBook) return;
+                try { setLeads(await storage.listLeads()); } catch { setLeads([]); }
+            };
+            useEffect(() => {
+                if (tab !== 'leads' || !storage || !isMasterBook) return;
+                refreshLeads();
+            }, [tab, storage, isMasterBook]);
 
             const slugify = (v) => v.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
@@ -1039,10 +1271,20 @@
                     const salt = randomSalt();
                     doc.auth = { salt, hash: await hashPassword(pw, salt) };
                     doc.updatedAt = nowIso();
+                    doc.passwordChangedAt = nowIso(); // נקרא במצב מקומי בלבד; בשרת מחושב משם
                     await storage.put(doc);
                     await refreshBooks();
                     alert('הסיסמה עודכנה. מסור אותה למיישם.');
                 } catch (e) { alert('עדכון הסיסמה נכשל: ' + (e.message || e)); }
+            };
+
+            const toggleBookDisabled = async (b) => {
+                const next = !b.disabled;
+                if (next && !window.confirm('להשבית את המיישם ' + (b.label || b.id) + '? הוא לא יוכל להיכנס עד שתפעיל מחדש.')) return;
+                try {
+                    if (storage.setDisabled) await storage.setDisabled(b.id, next);
+                    await refreshBooks();
+                } catch (e) { alert('הפעולה נכשלה: ' + (e.message || e)); }
             };
 
             const deleteBook = async (id) => {
@@ -1138,6 +1380,12 @@
             const logoInputRef = useRef(null);
 
             const [infoModule, setInfoModule] = useState(null);
+            const [quotes, setQuotes] = useState([]);
+            const [activeQuoteId, setActiveQuoteId] = useState(null);
+            const [quoteNote, setQuoteNote] = useState('');
+            const [quoteFilter, setQuoteFilter] = useState('');
+            const [leads, setLeads] = useState([]);
+            const [leadsFilter, setLeadsFilter] = useState('');
             const [pwInput, setPwInput] = useState('');
             const [pwError, setPwError] = useState('');
             const [books, setBooks] = useState([]);
@@ -1271,6 +1519,8 @@
                     setExtraTxPacks(0);
                     setExtraUserPacks(0);
                     setCustomSelections({});
+                    setActiveQuoteId(null);
+                    setQuoteNote('');
                 }
             }
 
@@ -1592,20 +1842,147 @@
                     </header>
 
                     {/* Tabs */}
-                    {!isMasterBook && (
-                        <div className="no-print max-w-[90rem] mx-auto px-4 md:px-8 pt-5">
-                            <div className="flex gap-2 border-b border-slate-200">
-                                <button onClick={() => setTab('quote')}
-                                    className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors ${tab === 'quote' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-                                    בניית אומדן
-                                </button>
+                    <div className="no-print max-w-[90rem] mx-auto px-4 md:px-8 pt-5">
+                        <div className="flex gap-2 border-b border-slate-200 overflow-x-auto">
+                            <button onClick={() => setTab('quote')}
+                                className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors whitespace-nowrap ${tab === 'quote' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                בניית אומדן
+                            </button>
+                            <button onClick={() => setTab('quotes')}
+                                className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${tab === 'quotes' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                האומדנים שלי
+                                {quotes.length > 0 && <span className="bg-slate-200 text-slate-600 text-[10px] font-black px-2 py-0.5 rounded-full">{quotes.length}</span>}
+                            </button>
+                            {!isMasterBook && (
                                 <button onClick={() => setTab('master')}
-                                    className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors flex items-center gap-2 ${tab === 'master' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                    className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${tab === 'master' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
                                     מחירון המאסטר
                                     {masterBehind && <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{masterDiff.total}</span>}
                                 </button>
-                            </div>
+                            )}
+                            {isMasterBook && (
+                                <button onClick={() => setTab('leads')}
+                                    className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${tab === 'leads' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                    <Icon name="users" size={14} /> לידים
+                                    {leads.length > 0 && <span className="bg-slate-200 text-slate-600 text-[10px] font-black px-2 py-0.5 rounded-full">{leads.length}</span>}
+                                </button>
+                            )}
                         </div>
+                    </div>
+
+                    {/* Quotes tab: אומדנים שנשמרו על שם לקוח */}
+                    {tab === 'quotes' && (
+                        <main className="no-print max-w-[90rem] mx-auto p-4 md:p-8 space-y-6">
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+                                    <div>
+                                        <h2 className="text-2xl font-black text-slate-800">האומדנים שלי</h2>
+                                        <p className="text-sm text-slate-500 mt-1">אומדנים שנשמרו על שם לקוח. פתיחה טוענת אותם מחדש לעריכה.</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input value={quoteFilter} onChange={e => setQuoteFilter(e.target.value)}
+                                            placeholder="חיפוש לפי שם לקוח..." className="p-2.5 border rounded-xl bg-slate-50 text-sm w-56" />
+                                        <button onClick={newQuote}
+                                            className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-black hover:bg-blue-700 flex items-center gap-2 whitespace-nowrap">
+                                            <Icon name="file-text" size={16} /> אומדן חדש
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {quotes.filter(q => q.clientName.toLowerCase().includes(quoteFilter.toLowerCase())).length === 0 ? (
+                                    <p className="text-sm text-slate-400 py-10 text-center">
+                                        {quotes.length === 0 ? 'עדיין לא נשמרו אומדנים. בנה אומדן ולחץ "שמור אומדן".' : 'לא נמצאו אומדנים תואמים לחיפוש.'}
+                                    </p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {quotes.filter(q => q.clientName.toLowerCase().includes(quoteFilter.toLowerCase())).map(q => (
+                                            <div key={q.id} className={`flex flex-wrap items-center gap-3 p-4 rounded-2xl border transition-colors ${activeQuoteId === q.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-slate-50'}`}>
+                                                <div className="flex-grow min-w-[180px]">
+                                                    <div className="font-black text-slate-800">{q.clientName}</div>
+                                                    <div className="text-[11px] text-slate-500 mt-0.5">
+                                                        עודכן {new Date(q.updatedAt).toLocaleString('he-IL')}
+                                                        {q.note && <span> · {q.note}</span>}
+                                                    </div>
+                                                </div>
+                                                <div className="text-sm font-black text-slate-700 whitespace-nowrap">
+                                                    {money(q.totals?.totalMRR || 0)} <span className="text-[10px] font-normal text-slate-400">לחודש</span>
+                                                </div>
+                                                <div className="text-xs font-bold text-orange-600 whitespace-nowrap">
+                                                    הקמה {money(q.totals?.totalSetup || 0)}
+                                                </div>
+                                                <button onClick={() => openQuote(q)}
+                                                    className="text-xs font-bold text-blue-600 bg-white border border-blue-200 px-3 py-2 rounded-lg hover:bg-blue-50">פתח</button>
+                                                <button onClick={() => duplicateQuote(q)}
+                                                    className="text-blue-500 hover:text-blue-700 bg-white border p-2 rounded-lg" title="שכפל"><Icon name="copy" size={16} /></button>
+                                                <button onClick={() => deleteQuote(q)}
+                                                    className="text-red-400 hover:text-red-600 bg-white border p-2 rounded-lg" title="מחק"><Icon name="trash-2" size={16} /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </section>
+                        </main>
+                    )}
+
+                    {/* Leads tab: כל האומדנים, לצפיית המאסטר בלבד */}
+                    {tab === 'leads' && isMasterBook && (
+                        <main className="no-print max-w-[90rem] mx-auto p-4 md:p-8 space-y-6">
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+                                    <div>
+                                        <h2 className="text-2xl font-black text-slate-800">לידים</h2>
+                                        <p className="text-sm text-slate-500 mt-1">כל האומדנים שנבנו על ידי כל המיישמים, החדש ביותר ראשון.</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input value={leadsFilter} onChange={e => setLeadsFilter(e.target.value)}
+                                            placeholder="חיפוש לפי לקוח או מיישם..." className="p-2.5 border rounded-xl bg-slate-50 text-sm w-64" />
+                                        <button onClick={refreshLeads}
+                                            className="p-2.5 bg-slate-100 rounded-xl hover:bg-slate-200" title="רענן"><Icon name="rotate-ccw" size={16} /></button>
+                                    </div>
+                                </div>
+
+                                {(() => {
+                                    const f = leadsFilter.toLowerCase();
+                                    const filtered = leads.filter(q =>
+                                        q.clientName.toLowerCase().includes(f) ||
+                                        (q.implementerName || '').toLowerCase().includes(f) ||
+                                        (q.pricebookLabel || '').toLowerCase().includes(f));
+                                    if (leads.length === 0) return <p className="text-sm text-slate-400 py-10 text-center">עדיין לא נשמרו אומדנים על ידי מיישמים.</p>;
+                                    if (filtered.length === 0) return <p className="text-sm text-slate-400 py-10 text-center">לא נמצאו לידים תואמים לחיפוש.</p>;
+                                    return (
+                                        <div className="scroll-x space-y-2">
+                                            {filtered.map(q => (
+                                                <div key={q.id} className="flex flex-wrap items-center gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                                                    <div className="flex-grow min-w-[200px]">
+                                                        <div className="font-black text-slate-800 flex items-center gap-2">
+                                                            {q.clientName}
+                                                            {q.contested && (
+                                                                <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                    <Icon name="shield" size={10} /> נבנה על ידי {q.clientImplementerCount} מיישמים ({q.clientQuoteCount} אומדנים)
+                                                                </span>
+                                                            )}
+                                                            {q.contested && q.isFirstForClient && (
+                                                                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">ראשון</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500 mt-0.5">
+                                                            {q.pricebookLabel} ({q.implementerName || q.pricebookId}) · נוצר {new Date(q.createdAt).toLocaleString('he-IL')}
+                                                            {q.updatedAt !== q.createdAt && <span> · עודכן {new Date(q.updatedAt).toLocaleString('he-IL')}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-sm font-black text-slate-700 whitespace-nowrap">
+                                                        {money(q.totals?.totalMRR || 0)} <span className="text-[10px] font-normal text-slate-400">לחודש</span>
+                                                    </div>
+                                                    <div className="text-xs font-bold text-orange-600 whitespace-nowrap">
+                                                        הקמה {money(q.totals?.totalSetup || 0)}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
+                            </section>
+                        </main>
                     )}
 
                     {/* Master sync tab */}
@@ -1994,6 +2371,15 @@
                                         )}
                                     </div>
 
+                                    {activeQuoteId && (
+                                        <div className="flex items-center gap-2 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-2.5">
+                                            <Icon name="file-text" size={14} /> עורך אומדן שמור: {clientName || '(ללא שם)'}
+                                        </div>
+                                    )}
+                                    <button onClick={saveQuote}
+                                        className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-xl shadow-lg flex items-center justify-center gap-2">
+                                        <Icon name="check-circle-2" size={18} /> {activeQuoteId ? 'עדכן אומדן שמור' : 'שמור אומדן על שם לקוח'}
+                                    </button>
                                     <button onClick={handlePrint}
                                         className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-xl shadow-lg flex items-center justify-center gap-2">
                                         <Icon name="file-text" /> הפק אומדן (PDF)
@@ -2596,30 +2982,38 @@
                                                 </div>
                                             )}
 
-                                            <h4 className="font-black text-slate-700 mt-8 mb-3">מחירונים קיימים ({books.length})</h4>
-                                            {books.length === 0 ? (
-                                                <p className="text-sm text-slate-400">עדיין לא נוצרו מחירונים.</p>
+                                            <h4 className="font-black text-slate-700 mt-8 mb-3">מיישמים וסיסמאות ({books.filter(b => b.id !== 'master').length})</h4>
+                                            {books.filter(b => b.id !== 'master').length === 0 ? (
+                                                <p className="text-sm text-slate-400">עדיין לא נוצרו מחירונים למיישמים.</p>
                                             ) : (
                                                 <div className="space-y-2">
-                                                    {books.map(b => (
-                                                        <div key={b.id} className="flex flex-wrap items-center gap-3 bg-slate-50 border rounded-xl p-3">
-                                                            <div className="flex-grow min-w-[160px]">
-                                                                <div className="font-black text-slate-800">{b.label || b.id}</div>
-                                                                <div className="text-[11px] text-slate-500">
-                                                                    {b.id} · גרסה {b.version} · {b.hasPassword ? 'מוגן בסיסמה' : 'ללא סיסמה'}
+                                                    {books.filter(b => b.id !== 'master').map(b => (
+                                                        <div key={b.id} className={`flex flex-wrap items-center gap-3 border rounded-xl p-3 ${b.disabled ? 'bg-red-50/50 border-red-200' : 'bg-slate-50'}`}>
+                                                            <div className="flex-grow min-w-[220px]">
+                                                                <div className="font-black text-slate-800 flex items-center gap-2">
+                                                                    {b.label || b.id}
+                                                                    {b.disabled && <span className="bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded-full">מושבת</span>}
+                                                                </div>
+                                                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                                                    {b.id} · {b.hasPassword ? 'מוגן בסיסמה' : 'ללא סיסמה'}
                                                                     {b.implementerName ? ' · ' + b.implementerName : ''}
+                                                                    {' · '}{b.quoteCount || 0} אומדנים
+                                                                </div>
+                                                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                                                    כניסה אחרונה: {b.lastLoginAt ? new Date(b.lastLoginAt).toLocaleString('he-IL') : 'טרם נכנס'}
+                                                                    {' · '}סיסמה שונתה: {b.passwordChangedAt ? new Date(b.passwordChangedAt).toLocaleString('he-IL') : '—'}
                                                                 </div>
                                                             </div>
-                                                            {b.id !== 'master' && (
-                                                                <>
-                                                                    <button onClick={() => navigator.clipboard?.writeText(window.location.origin + window.location.pathname + '?p=' + b.id)}
-                                                                        className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">העתק קישור</button>
-                                                                    <button onClick={() => resetBookPassword(b.id)}
-                                                                        className="text-xs font-bold text-slate-600 bg-white border px-3 py-2 rounded-lg">סיסמה חדשה</button>
-                                                                    <button onClick={() => deleteBook(b.id)}
-                                                                        className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg"><Icon name="trash-2" size={16} /></button>
-                                                                </>
-                                                            )}
+                                                            <button onClick={() => navigator.clipboard?.writeText(window.location.origin + window.location.pathname + '?p=' + b.id)}
+                                                                className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg whitespace-nowrap">העתק קישור</button>
+                                                            <button onClick={() => resetBookPassword(b.id)}
+                                                                className="text-xs font-bold text-slate-600 bg-white border px-3 py-2 rounded-lg whitespace-nowrap">סיסמה חדשה</button>
+                                                            <button onClick={() => toggleBookDisabled(b)}
+                                                                className={`text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap ${b.disabled ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'}`}>
+                                                                {b.disabled ? 'הפעל' : 'השבת'}
+                                                            </button>
+                                                            <button onClick={() => deleteBook(b.id)}
+                                                                className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg"><Icon name="trash-2" size={16} /></button>
                                                         </div>
                                                     ))}
                                                 </div>

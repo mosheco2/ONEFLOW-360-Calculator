@@ -562,13 +562,44 @@
         const BACKEND_KEY = 'oneflow_backend_v1';
         const LOCAL_DB_KEY = 'oneflow_pricebooks_v1';
 
+        const DEFAULT_ORG_SLUG = 'onebtn_team';
+
         const readBackendConfig = () => {
+            const empty = { baseUrl: '', token: '', orgSlug: DEFAULT_ORG_SLUG, extraHeaders: '' };
             try {
                 const raw = localStorage.getItem(BACKEND_KEY);
-                const c = raw ? JSON.parse(raw) : {};
-                return { baseUrl: (c.baseUrl || '').replace(/\/+$/, ''), token: c.token || '' };
-            } catch { return { baseUrl: '', token: '' }; }
+                if (!raw) return empty;
+                const c = JSON.parse(raw);
+                return {
+                    baseUrl: (c.baseUrl || '').replace(/\/+$/, ''),
+                    token: c.token || '',
+                    orgSlug: c.orgSlug !== undefined ? c.orgSlug : DEFAULT_ORG_SLUG,
+                    extraHeaders: c.extraHeaders || ''
+                };
+            } catch { return empty; }
         };
+
+        // כותרות נוספות, שורה לכל אחת בתבנית  שם: ערך
+        const parseExtraHeaders = (text) => {
+            const out = {};
+            (text || '').split(/\r?\n/).forEach(line => {
+                const i = line.indexOf(':');
+                if (i < 1) return;
+                const k = line.slice(0, i).trim();
+                const v = line.slice(i + 1).trim();
+                if (k && v) out[k] = v;
+            });
+            return out;
+        };
+
+        // כל הכותרות הנשלחות בבקשה לשרת
+        const buildHeaders = (cfg, extra) => ({
+            'Content-Type': 'application/json',
+            ...(cfg.token ? { 'Authorization': 'Bearer ' + cfg.token } : {}),
+            ...(cfg.orgSlug ? { 'x-org-slug': cfg.orgSlug } : {}),
+            ...parseExtraHeaders(cfg.extraHeaders),
+            ...(extra || {})
+        });
         const writeBackendConfig = (c) => {
             try { localStorage.setItem(BACKEND_KEY, JSON.stringify(c)); } catch {}
         };
@@ -655,11 +686,7 @@
             async _call(path, options = {}) {
                 const res = await fetch(this.baseUrl + path, {
                     ...options,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...(cfg.token ? { 'Authorization': 'Bearer ' + cfg.token } : {}),
-                        ...(options.headers || {})
-                    }
+                    headers: buildHeaders(cfg, options.headers)
                 });
                 if (res.status === 404) return null;
                 if (!res.ok) throw new Error('שגיאת שרת ' + res.status);
@@ -1001,6 +1028,27 @@
                     setBook(prev => ({ ...prev, config: JSON.parse(JSON.stringify(v.config)) }));
                     alert('הגרסה נטענה. לחץ "שמור" כדי לקבע אותה.');
                 } catch (e) { alert('השחזור נכשל: ' + (e.message || e)); }
+            };
+
+            const [connTest, setConnTest] = useState(null);
+
+            // בדיקת חיבור: שולחת בקשה אמיתית עם כל הכותרות ומדווחת מה חזר
+            const testConnection = async (cfg) => {
+                if (!cfg.baseUrl) { setConnTest({ ok: false, msg: 'יש להזין כתובת API.' }); return; }
+                setConnTest({ pending: true });
+                const headers = buildHeaders(cfg);
+                try {
+                    const res = await fetch(cfg.baseUrl.replace(/\/+$/, '') + '/pricebooks', { headers });
+                    if (res.ok) {
+                        let n = '';
+                        try { const j = await res.json(); if (Array.isArray(j)) n = ' · ' + j.length + ' מחירונים'; } catch {}
+                        setConnTest({ ok: true, msg: 'החיבור תקין (' + res.status + ')' + n, sent: Object.keys(headers) });
+                    } else {
+                        setConnTest({ ok: false, msg: 'השרת החזיר ' + res.status + ' ' + res.statusText, sent: Object.keys(headers) });
+                    }
+                } catch (e) {
+                    setConnTest({ ok: false, msg: 'לא ניתן להגיע לשרת: ' + (e.message || e), sent: Object.keys(headers) });
+                }
             };
 
             const applyBackendConfig = (cfg) => {
@@ -2056,15 +2104,46 @@
                                                     onChange={e => setBackendCfg({ ...backendCfg, token: e.target.value })}
                                                     placeholder="Bearer token" className="w-full p-3 border rounded-xl bg-white font-bold" />
                                             </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">מזהה ארגון · x-org-slug</label>
+                                                <input value={backendCfg.orgSlug} dir="ltr"
+                                                    onChange={e => setBackendCfg({ ...backendCfg, orgSlug: e.target.value })}
+                                                    placeholder="onebtn_team" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">כותרות נוספות (שורה לכל אחת: שם: ערך)</label>
+                                                <textarea value={backendCfg.extraHeaders} dir="ltr" rows={2}
+                                                    onChange={e => setBackendCfg({ ...backendCfg, extraHeaders: e.target.value })}
+                                                    placeholder="x-api-version: 1" className="w-full p-3 border rounded-xl bg-white font-bold text-xs" />
+                                            </div>
                                         </div>
-                                        <div className="flex gap-2 mt-3">
+
+                                        <div className="mt-3 bg-white/70 border rounded-xl p-3">
+                                            <div className="text-[11px] font-bold text-slate-500 mb-1">הכותרות שיישלחו בכל בקשה</div>
+                                            <div dir="ltr" className="text-[11px] font-mono text-slate-700 space-y-0.5">
+                                                {Object.entries(buildHeaders(backendCfg)).map(([k, v]) => (
+                                                    <div key={k}>{k}: {k === 'Authorization' ? 'Bearer ***' : v}</div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2 mt-3">
                                             <button onClick={() => applyBackendConfig(backendCfg)}
                                                 className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-700">התחבר</button>
+                                            <button onClick={() => testConnection(backendCfg)}
+                                                className="px-6 py-2.5 rounded-xl font-bold text-slate-700 bg-white border hover:bg-slate-100">בדוק חיבור</button>
                                             {backendCfg.baseUrl && (
-                                                <button onClick={() => applyBackendConfig({ baseUrl: '', token: '' })}
+                                                <button onClick={() => applyBackendConfig({ ...backendCfg, baseUrl: '', token: '' })}
                                                     className="px-6 py-2.5 rounded-xl font-bold text-red-500 bg-white border border-red-200 hover:bg-red-50">נתק</button>
                                             )}
                                         </div>
+
+                                        {connTest && (
+                                            <div className={`mt-3 rounded-xl p-3 text-sm font-bold ${connTest.pending ? 'bg-slate-100 text-slate-600'
+                                                : connTest.ok ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                {connTest.pending ? 'בודק…' : connTest.msg}
+                                            </div>
+                                        )}
                                         <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
                                             מבנה ה-API הנדרש מתועד בקובץ README.md שבתיקיית המערכת. עד לחיבור, המערכת עובדת במלואה מול אחסון הדפדפן.
                                         </p>

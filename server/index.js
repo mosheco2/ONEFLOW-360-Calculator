@@ -10,7 +10,15 @@ const { Pool } = require('pg');
 const PORT           = process.env.PORT || 10000;
 const ORG_SLUG       = process.env.ORG_SLUG || 'onebtn_team';
 const ADMIN_TOKEN    = process.env.ADMIN_TOKEN || '';
-const ALLOWED_ORIGIN = (process.env.ALLOWED_ORIGIN || '*').replace(/\/+$/, '');
+// אפשר יותר ממקור מותר אחד (למשל דומיין מותאם אישית + כתובת ה-onrender.com),
+// מופרדים בפסיקים - כדי שלא כל שינוי דומיין ידרוש בחירה בין הישן לחדש
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || '*').split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean);
+const resolveOrigin = (req) => {
+    if (ALLOWED_ORIGINS.includes('*')) return '*';
+    const reqOrigin = ((req && req.headers && req.headers.origin) || '').replace(/\/+$/, '');
+    if (reqOrigin && ALLOWED_ORIGINS.includes(reqOrigin)) return reqOrigin;
+    return ALLOWED_ORIGINS[0] || '*';
+};
 const SESSION_DAYS   = Number(process.env.SESSION_DAYS || 30);
 
 if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(1); }
@@ -32,7 +40,7 @@ const send = (res, code, body) => {
     const payload = body === undefined || body === null ? '' : JSON.stringify(body);
     res.writeHead(code, {
         'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+        'Access-Control-Allow-Origin': resolveOrigin(res.req),
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-org-slug',
         'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
         'Access-Control-Max-Age': '86400',
@@ -528,6 +536,13 @@ async function route(req, res, url, who) {
             const isNew = !(await owned());
             const proposalId = d.id || newId('pr');
             const retentionDays = Number(d.retentionDays) > 0 ? Number(d.retentionDays) : 14;
+            // מיישם (לא מנהל) אינו יכול לייצר הצעת מחיר ללקוח שיש עליו הגנה אצל מיישם אחר - חוסם לפני השמירה
+            if (who.role === 'implementer') {
+                const blocking = await findLeadConflict(proposalId, target, d.clientName);
+                if (blocking) {
+                    return send(res, 409, { error: 'lead_protected', retentionExpiresAt: blocking.retentionExpiresAt });
+                }
+            }
             const { rows } = await pool.query(`
                 insert into proposals
                     (id, pricebook_id, source_quote_id, created_by, client_name, client_business_id,
@@ -608,6 +623,60 @@ async function route(req, res, url, who) {
             isFirstForClient: new Date(r.created_at).getTime() === new Date(r.client_first_at).getTime(),
             proposal: r.proposal_id ? { id: r.proposal_id, status: r.proposal_status, retentionExpiresAt: r.retention_expires_at } : null
         })));
+    }
+
+    // ===== פניות "צור קשר מול ONEBTN" כשמיישם נחסם מלפתוח הצעה ללקוח מוגן =====
+    const contactRequestOut = (r) => ({
+        id: r.id, pricebookId: r.pricebook_id, pricebookLabel: r.pricebook_label, implementerName: r.implementer_name,
+        contactName: r.contact_name, contactPhone: r.contact_phone, contactEmail: r.contact_email,
+        clientName: r.client_name, clientBusinessId: r.client_business_id, clientContactName: r.client_contact_name,
+        clientPhone: r.client_phone, clientEmail: r.client_email, clientAddress: r.client_address,
+        message: r.message,
+        protectingPricebookId: r.protecting_pricebook_id, protectingPricebookLabel: r.protecting_pricebook_label,
+        protectingRetentionExpiresAt: r.protecting_retention_expires_at,
+        status: r.status, createdAt: r.created_at, handledAt: r.handled_at
+    });
+    const CONTACT_REQUEST_SELECT_SQL = `
+        select lcr.*, p.label as pricebook_label, p.implementer_name, pp.label as protecting_pricebook_label
+        from lead_contact_requests lcr
+        join pricebooks p on p.id = lcr.pricebook_id
+        left join pricebooks pp on pp.id = lcr.protecting_pricebook_id`;
+
+    if (seg[0] === 'lead-contact-requests' && seg.length === 1 && m === 'POST') {
+        if (who.role !== 'implementer') return send(res, 403, { error: 'forbidden' });
+        const d = await readBody(req);
+        if (!d.clientName) return send(res, 400, { error: 'clientName is required' });
+        const conflict = await findLeadConflict('', who.pricebookId, d.clientName);
+        const id = newId('lcr');
+        const { rows } = await pool.query(`
+            insert into lead_contact_requests
+                (id, pricebook_id, contact_name, contact_phone, contact_email,
+                 client_name, client_business_id, client_contact_name, client_phone, client_email, client_address,
+                 message, protecting_pricebook_id, protecting_retention_expires_at)
+            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            returning *`,
+            [id, who.pricebookId, d.contactName || null, d.contactPhone || null, d.contactEmail || null,
+             d.clientName, d.clientBusinessId || null, d.clientContactName || null, d.clientPhone || null,
+             d.clientEmail || null, d.clientAddress || null, d.message || null,
+             conflict ? conflict.pricebookId : null, conflict ? conflict.retentionExpiresAt : null]);
+        const full = await pool.query(`${CONTACT_REQUEST_SELECT_SQL} where lcr.id=$1`, [rows[0].id]);
+        return send(res, 200, contactRequestOut(full.rows[0]));
+    }
+    if (seg[0] === 'lead-contact-requests' && seg.length === 1 && m === 'GET') {
+        if (who.role !== 'admin') return send(res, 403, { error: 'forbidden' });
+        const { rows } = await pool.query(`${CONTACT_REQUEST_SELECT_SQL} order by lcr.created_at desc limit 500`);
+        return send(res, 200, rows.map(contactRequestOut));
+    }
+    if (seg[0] === 'lead-contact-requests' && seg.length === 2 && m === 'PUT') {
+        if (who.role !== 'admin') return send(res, 403, { error: 'forbidden' });
+        const d = await readBody(req);
+        const status = d.status === 'handled' ? 'handled' : 'open';
+        const { rows } = await pool.query(`
+            update lead_contact_requests set status=$2, handled_at=case when $2='handled' then now() else null end
+            where id=$1 returning *`, [seg[1], status]);
+        if (!rows.length) return send(res, 404);
+        const full = await pool.query(`${CONTACT_REQUEST_SELECT_SQL} where lcr.id=$1`, [seg[1]]);
+        return send(res, 200, contactRequestOut(full.rows[0]));
     }
 
     return send(res, 404, { error: 'unknown endpoint' });

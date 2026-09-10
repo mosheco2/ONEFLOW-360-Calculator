@@ -119,3 +119,28 @@ create table if not exists proposals (
 create index if not exists proposals_book_idx   on proposals (pricebook_id, updated_at desc);
 create index if not exists proposals_client_idx on proposals (lower(trim(client_name)));
 create index if not exists proposals_status_idx on proposals (status);
+
+-- ============================================================
+--  פניות "צור קשר מול ONEBTN" - כשמיישם נחסם מלייצר הצעת מחיר
+--  ללקוח שכבר מוגן אצל מיישם אחר, ומבקש שהמנהל יטפל בהתנגשות.
+-- ============================================================
+create table if not exists lead_contact_requests (
+    id                              text primary key,
+    pricebook_id                    text        not null references pricebooks(id) on delete cascade,
+    contact_name                    text,
+    contact_phone                   text,
+    contact_email                   text,
+    client_name                     text        not null,
+    client_business_id              text,
+    client_contact_name             text,
+    client_phone                    text,
+    client_email                    text,
+    client_address                  text,
+    message                         text,
+    protecting_pricebook_id         text,
+    protecting_retention_expires_at timestamptz,
+    status                          text        not null default 'open' check (status in ('open','handled')),
+    created_at                      timestamptz not null default now(),
+    handled_at                      timestamptz
+);
+create index if not exists lead_contact_requests_status_idx on lead_contact_requests (status, created_at desc);

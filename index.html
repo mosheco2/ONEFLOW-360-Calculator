@@ -734,8 +734,11 @@
             _read() {
                 try {
                     const d = JSON.parse(localStorage.getItem(LOCAL_DB_KEY) || '{}');
-                    return { books: d.books || {}, versions: d.versions || {}, quotes: d.quotes || {}, proposals: d.proposals || {} };
-                } catch { return { books: {}, versions: {}, quotes: {}, proposals: {} }; }
+                    return {
+                        books: d.books || {}, versions: d.versions || {}, quotes: d.quotes || {}, proposals: d.proposals || {},
+                        leadContactRequests: d.leadContactRequests || {}
+                    };
+                } catch { return { books: {}, versions: {}, quotes: {}, proposals: {}, leadContactRequests: {} }; }
             },
             _write(db) {
                 try { localStorage.setItem(LOCAL_DB_KEY, JSON.stringify(db)); return true; }
@@ -904,12 +907,38 @@
                 }
                 return null;
             },
+            // מוצא הצעה פעילה (לא אבודה/פגה) של מיישם אחר לאותו שם לקוח, בתוך חלון השמירה
+            _findLeadConflict(db, clientName, excludePricebookId, excludeId) {
+                const norm = (s) => (s || '').trim().toLowerCase();
+                const conflicts = [];
+                Object.entries(db.proposals).forEach(([pbId, ps]) => {
+                    if (pbId === excludePricebookId) return;
+                    Object.values(ps).forEach(p => {
+                        if (p.id === excludeId) return;
+                        if (['lost', 'expired'].includes(p.status)) return;
+                        if (new Date(p.retentionExpiresAt).getTime() <= Date.now()) return;
+                        if (norm(p.clientName) === norm(clientName)) conflicts.push(this._decorateProposal(db, pbId, p));
+                    });
+                });
+                conflicts.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+                return conflicts[0] || null;
+            },
             async putProposal(doc) {
                 const db = this._read();
                 const pricebookId = doc.pricebookId;
                 db.proposals[pricebookId] = db.proposals[pricebookId] || {};
                 const existing = db.proposals[pricebookId][doc.id];
                 const isNew = !existing;
+                // מיישם (לא מנהל) אינו יכול לייצר הצעת מחיר ללקוח שיש עליו הגנה אצל מיישם אחר - חוסם לפני השמירה
+                if (doc.createdBy !== 'admin') {
+                    const blocking = this._findLeadConflict(db, doc.clientName, pricebookId, doc.id);
+                    if (blocking) {
+                        const err = new Error('קיימת הגנה על ליד זה');
+                        err.status = 409;
+                        err.body = { error: 'lead_protected', retentionExpiresAt: blocking.retentionExpiresAt };
+                        throw err;
+                    }
+                }
                 const now = nowIso();
                 const retentionDays = Number(doc.retentionDays) > 0 ? Number(doc.retentionDays) : (existing ? existing.retentionDays : DEFAULT_RETENTION_DAYS);
                 const saved = {
@@ -923,21 +952,49 @@
                 db.proposals[pricebookId][doc.id] = saved;
                 this._write(db);
                 const out = this._decorateProposal(db, pricebookId, saved);
-                if (isNew) {
-                    const norm = (s) => (s || '').trim().toLowerCase();
-                    const conflicts = [];
-                    Object.entries(db.proposals).forEach(([pbId, ps]) => {
-                        if (pbId === pricebookId) return;
-                        Object.values(ps).forEach(p => {
-                            if (['lost', 'expired'].includes(p.status)) return;
-                            if (new Date(p.retentionExpiresAt).getTime() <= Date.now()) return;
-                            if (norm(p.clientName) === norm(doc.clientName)) conflicts.push(this._decorateProposal(db, pbId, p));
-                        });
-                    });
-                    conflicts.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-                    if (conflicts.length) out.leadWarning = conflicts[0];
+                // אזהרה מידעית בלבד למנהל (שאינו חסום) כשהוא שומר הצעה חדשה ללקוח שכבר מוגן במקום אחר
+                if (isNew && doc.createdBy === 'admin') {
+                    const conflict = this._findLeadConflict(db, doc.clientName, pricebookId, doc.id);
+                    if (conflict) out.leadWarning = conflict;
                 }
                 return out;
+            },
+            async createLeadContactRequest(payload) {
+                const db = this._read();
+                db.leadContactRequests = db.leadContactRequests || {};
+                const id = newId('lcr');
+                const conflict = this._findLeadConflict(db, payload.clientName, payload.pricebookId, null);
+                const book = db.books[payload.pricebookId];
+                const rec = {
+                    id, pricebookId: payload.pricebookId,
+                    pricebookLabel: book ? book.label : payload.pricebookId,
+                    implementerName: (book && book.implementerName) || payload.implementerName || null,
+                    contactName: payload.contactName || null, contactPhone: payload.contactPhone || null, contactEmail: payload.contactEmail || null,
+                    clientName: payload.clientName, clientBusinessId: payload.clientBusinessId || null,
+                    clientContactName: payload.clientContactName || null, clientPhone: payload.clientPhone || null,
+                    clientEmail: payload.clientEmail || null, clientAddress: payload.clientAddress || null,
+                    message: payload.message || null,
+                    protectingPricebookId: conflict ? conflict.pricebookId : null,
+                    protectingPricebookLabel: conflict ? conflict.pricebookLabel : null,
+                    protectingRetentionExpiresAt: conflict ? conflict.retentionExpiresAt : null,
+                    status: 'open', createdAt: nowIso(), handledAt: null
+                };
+                db.leadContactRequests[id] = rec;
+                this._write(db);
+                return rec;
+            },
+            async listLeadContactRequests() {
+                const db = this._read();
+                return Object.values(db.leadContactRequests || {}).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            },
+            async setLeadContactRequestStatus(id, status) {
+                const db = this._read();
+                const rec = (db.leadContactRequests || {})[id];
+                if (!rec) return null;
+                rec.status = status;
+                rec.handledAt = status === 'handled' ? nowIso() : null;
+                this._write(db);
+                return rec;
             },
             async removeProposal(id) {
                 const db = this._read();
@@ -992,6 +1049,9 @@
                 if (!res.ok) {
                     const err = new Error('שגיאת שרת ' + res.status);
                     err.status = res.status;
+                    // שומרים גם את גוף התגובה (למשל error:'lead_protected') כדי שקריאה ספציפית
+                    // תוכל להבחין בין סוגי שגיאה שונים, בלי לשנות את טקסט השגיאה הכללי הקיים
+                    err.body = await res.json().catch(() => null);
                     throw err;
                 }
                 return res.status === 204 ? null : res.json();
@@ -1084,6 +1144,16 @@
             async extendRetention(id, days) {
                 return this._call('/proposals/' + encodeURIComponent(id) + '/retention', {
                     method: 'PUT', body: JSON.stringify({ extendByDays: days })
+                });
+            },
+            // --- פניות "צור קשר מול ONEBTN" על התנגשות הגנת ליד ---
+            async createLeadContactRequest(payload) {
+                return this._call('/lead-contact-requests', { method: 'POST', body: JSON.stringify(payload) });
+            },
+            async listLeadContactRequests() { return (await this._call('/lead-contact-requests')) || []; },
+            async setLeadContactRequestStatus(id, status) {
+                return this._call('/lead-contact-requests/' + encodeURIComponent(id), {
+                    method: 'PUT', body: JSON.stringify({ status })
                 });
             },
             // --- כניסת מנהל בסיסמה (מעל מפתח הגישה הגולמי) ---
@@ -1675,8 +1745,41 @@
                     await refreshProposals();
                     setProposalEditor(null);
                     if (saved && saved.leadWarning) setLeadWarningInfo(saved.leadWarning);
-                } catch (e) { setProposalError('שמירת ההצעה נכשלה: ' + (e.message || e)); }
+                } catch (e) {
+                    if (e && e.status === 409 && e.body && e.body.error === 'lead_protected') {
+                        // לא סוגרים את עורך ההצעה - הפרטים שהמיישם מילא נשארים, כדי שיוכל
+                        // לצרף אותם ישירות לפנייה מול ONEBTN בלי להקליד שוב
+                        setLeadBlockedInfo({ ...doc, retentionExpiresAt: e.body.retentionExpiresAt });
+                    } else {
+                        setProposalError('שמירת ההצעה נכשלה: ' + (e.message || e));
+                    }
+                }
                 setProposalSaving(false);
+            };
+
+            const sendLeadContactRequest = async () => {
+                if (!leadBlockedInfo || !storage) return;
+                setContactSending(true);
+                try {
+                    await storage.createLeadContactRequest({
+                        pricebookId: book.id,
+                        contactName: (book.profile && book.profile.contactName) || '',
+                        contactPhone: (book.profile && book.profile.phone) || '',
+                        contactEmail: (book.profile && book.profile.email) || '',
+                        clientName: leadBlockedInfo.clientName,
+                        clientBusinessId: leadBlockedInfo.clientBusinessId,
+                        clientContactName: leadBlockedInfo.clientContactName,
+                        clientPhone: leadBlockedInfo.clientPhone,
+                        clientEmail: leadBlockedInfo.clientEmail,
+                        clientAddress: leadBlockedInfo.clientAddress,
+                        message: contactMsg
+                    });
+                    setContactSent(true);
+                } catch (e) { alert('שליחת הפנייה נכשלה: ' + (e.message || e)); }
+                setContactSending(false);
+            };
+            const closeLeadBlockedModal = () => {
+                setLeadBlockedInfo(null); setContactMsg(''); setContactSending(false); setContactSent(false);
             };
 
             const deleteProposal = async (p) => {
@@ -1979,6 +2082,11 @@
             const [proposalSaving, setProposalSaving] = useState(false);
             const [proposalError, setProposalError] = useState('');
             const [leadWarningInfo, setLeadWarningInfo] = useState(null);
+            // חסימת שמירת הצעה למיישם, כשהלקוח מוגן אצל מיישם אחר, וטופס "צור קשר מול ONEBTN"
+            const [leadBlockedInfo, setLeadBlockedInfo] = useState(null);
+            const [contactMsg, setContactMsg] = useState('');
+            const [contactSending, setContactSending] = useState(false);
+            const [contactSent, setContactSent] = useState(false);
             const togglePartnerExpanded = (id) => setExpandedPartnerId(prev => prev === id ? null : id);
             // קופצת מכל מקום באפליקציה (למשל מכותרת קבוצה בטאב הצעות מחיר) ישירות
             // אל פעילות המיישם המלאה בטאב "מיישמים" של מסך הניהול
@@ -1992,6 +2100,41 @@
             const [leadsFilter, setLeadsFilter] = useState('');
             const [pwInput, setPwInput] = useState('');
             const [pwError, setPwError] = useState('');
+
+            // אזור התראות למנהל המאסטר: פעילות אחרונה במערכת, ופניות "צור קשר" על התנגשות לידים
+            const [notifTab, setNotifTab] = useState('activity');
+            const [activityFeed, setActivityFeed] = useState([]);
+            const [contactRequests, setContactRequests] = useState([]);
+            const openContactRequestCount = contactRequests.filter(r => r.status !== 'handled').length;
+            const refreshActivityFeed = async () => {
+                if (!storage || !isMasterBook) return;
+                try {
+                    const [ls, ps] = await Promise.all([storage.listLeads().catch(() => []), storage.listProposals(null).catch(() => [])]);
+                    const items = [
+                        ...ls.map(q => ({ type: 'quote', id: q.id, clientName: q.clientName, pricebookLabel: q.pricebookLabel, implementerName: q.implementerName, amount: (q.totals && q.totals.totalMRR) || 0, createdAt: q.createdAt })),
+                        ...ps.map(p => ({ type: 'proposal', id: p.id, clientName: p.clientName, pricebookLabel: p.pricebookLabel, implementerName: p.implementerName, amount: (p.totals && p.totals.totalMRR) || 0, createdAt: p.createdAt }))
+                    ].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 60);
+                    setActivityFeed(items);
+                } catch { setActivityFeed([]); }
+            };
+            const refreshContactRequests = async () => {
+                if (!storage || !isMasterBook) return;
+                try { setContactRequests(await storage.listLeadContactRequests()); } catch { setContactRequests([]); }
+            };
+            // טוענים פניות פתוחות ברקע ברגע פתיחת מסך הניהול, כדי שהתג האדום יהיה מדויק בלי לחכות לכניסה לטאב
+            useEffect(() => {
+                if (!isAdminOpen || !storage || !isMasterBook) return;
+                refreshContactRequests();
+            }, [isAdminOpen, storage, isMasterBook]);
+            useEffect(() => {
+                if (tab !== 'notifications' || !storage || !isMasterBook) return;
+                refreshActivityFeed(); refreshContactRequests();
+            }, [tab, storage, isMasterBook]);
+            const markContactRequest = async (id, status) => {
+                if (!storage) return;
+                try { await storage.setLeadContactRequestStatus(id, status); await refreshContactRequests(); }
+                catch (e) { alert('העדכון נכשל: ' + (e.message || e)); }
+            };
 
             // פרופיל מיישם (חובה)
             const [profileForm, setProfileForm] = useState({ businessName: '', businessId: '', contactName: '', phone: '', email: '', address: '' });
@@ -2553,6 +2696,13 @@
                                     {leads.length > 0 && <span className="bg-slate-200 text-slate-600 text-[10px] font-black px-2 py-0.5 rounded-full">{leads.length}</span>}
                                 </button>
                             )}
+                            {isMasterBook && (
+                                <button onClick={() => setTab('notifications')}
+                                    className={`px-5 py-3 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors flex items-center gap-2 whitespace-nowrap ${tab === 'notifications' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                    <Icon name="bell" size={14} /> התראות
+                                    {openContactRequestCount > 0 && <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{openContactRequestCount}</span>}
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -2688,6 +2838,105 @@
                                         </div>
                                     );
                                 })()}
+                            </section>
+                        </main>
+                    )}
+
+                    {/* Notifications tab: אזור התראות למנהל המאסטר - פעילות אחרונה, והתראות פעילות */}
+                    {tab === 'notifications' && isMasterBook && (
+                        <main className="no-print max-w-[90rem] mx-auto p-4 md:p-8 space-y-6">
+                            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                                <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+                                    <div>
+                                        <h2 className="text-2xl font-black text-slate-800">התראות</h2>
+                                        <p className="text-sm text-slate-500 mt-1">פעילות אחרונה במערכת, ופניות שדורשות טיפול.</p>
+                                    </div>
+                                    <button onClick={() => { refreshActivityFeed(); refreshContactRequests(); }}
+                                        className="p-2.5 bg-slate-100 rounded-xl hover:bg-slate-200" title="רענן"><Icon name="rotate-ccw" size={16} /></button>
+                                </div>
+
+                                <div className="flex gap-2 border-b border-slate-200 mb-6">
+                                    <button onClick={() => setNotifTab('activity')}
+                                        className={`px-4 py-2.5 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors ${notifTab === 'activity' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                        פעילות אחרונה
+                                    </button>
+                                    <button onClick={() => setNotifTab('alerts')}
+                                        className={`px-4 py-2.5 font-black text-sm rounded-t-xl border-b-2 -mb-px transition-colors flex items-center gap-2 ${notifTab === 'alerts' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                        התראות פעילות
+                                        {openContactRequestCount > 0 && <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{openContactRequestCount}</span>}
+                                    </button>
+                                </div>
+
+                                {notifTab === 'activity' && (
+                                    activityFeed.length === 0 ? <p className="text-sm text-slate-400 py-10 text-center">אין עדיין פעילות רשומה.</p> : (
+                                    <div className="scroll-x space-y-2">
+                                        {activityFeed.map(item => (
+                                            <div key={item.type + '_' + item.id} className="flex flex-wrap items-center gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50">
+                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${item.type === 'proposal' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
+                                                    <Icon name={item.type === 'proposal' ? 'file-signature' : 'file-text'} size={16} />
+                                                </div>
+                                                <div className="flex-grow min-w-[200px]">
+                                                    <div className="font-bold text-slate-800 text-sm">
+                                                        {item.type === 'proposal' ? 'יצירת/עדכון הצעת מחיר' : 'יצירת אומדן'} עבור {item.clientName}
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500 mt-0.5">
+                                                        {item.pricebookLabel} ({item.implementerName || '—'}) · {new Date(item.createdAt).toLocaleString('he-IL')}
+                                                    </div>
+                                                </div>
+                                                <div className="text-sm font-black text-slate-700 whitespace-nowrap">{money(item.amount)} <span className="text-[10px] font-normal text-slate-400">לחודש</span></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    )
+                                )}
+
+                                {notifTab === 'alerts' && (
+                                    contactRequests.length === 0 ? <p className="text-sm text-slate-400 py-10 text-center">אין התראות פעילות. התראה תופיע כאן כשמיישם ינסה לפתוח הצעה ללקוח מוגן ויפנה ל-ONEBTN.</p> : (
+                                    <div className="scroll-x space-y-2">
+                                        {contactRequests.map(r => (
+                                            <div key={r.id} className={`p-4 rounded-2xl border ${r.status === 'handled' ? 'border-slate-200 bg-slate-50' : 'border-red-200 bg-red-50'}`}>
+                                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                                    <Icon name="shield-alert" size={14} className={r.status === 'handled' ? 'text-slate-400' : 'text-red-600'} />
+                                                    <span className="font-black text-slate-800 text-sm">בקשת קשר: הגנת ליד על {r.clientName}</span>
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${r.status === 'handled' ? 'bg-slate-200 text-slate-600' : 'bg-red-100 text-red-700'}`}>
+                                                        {r.status === 'handled' ? 'טופל' : 'פתוח'}
+                                                    </span>
+                                                    <span className="text-[11px] text-slate-400 mr-auto">{new Date(r.createdAt).toLocaleString('he-IL')}</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-600">
+                                                    <div>
+                                                        <div className="font-bold text-slate-700 mb-0.5">המיישם המבקש</div>
+                                                        <div>{r.pricebookLabel} ({r.implementerName || r.pricebookId})</div>
+                                                        <div>{r.contactName || '—'} · {r.contactPhone || '—'} · {r.contactEmail || '—'}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold text-slate-700 mb-0.5">הלקוח המבוקש</div>
+                                                        <div>{r.clientName} {r.clientBusinessId ? '· ' + r.clientBusinessId : ''}</div>
+                                                        <div>{r.clientContactName || '—'} · {r.clientPhone || '—'} · {r.clientEmail || '—'}</div>
+                                                        {r.clientAddress && <div>{r.clientAddress}</div>}
+                                                    </div>
+                                                </div>
+                                                {r.protectingPricebookId && (
+                                                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2 mt-2">
+                                                        ההגנה שייכת ל-<b>{r.protectingPricebookLabel || r.protectingPricebookId}</b>
+                                                        {r.protectingRetentionExpiresAt && <> · בתוקף עד {new Date(r.protectingRetentionExpiresAt).toLocaleDateString('he-IL')}</>}
+                                                    </div>
+                                                )}
+                                                {r.message && <div className="text-xs text-slate-600 bg-white border rounded-xl p-2 mt-2">"{r.message}"</div>}
+                                                <div className="flex justify-end mt-3">
+                                                    {r.status === 'handled' ? (
+                                                        <button onClick={() => markContactRequest(r.id, 'open')}
+                                                            className="text-xs font-bold text-slate-600 bg-white border px-3 py-1.5 rounded-lg hover:bg-slate-50">סמן כפתוח</button>
+                                                    ) : (
+                                                        <button onClick={() => markContactRequest(r.id, 'handled')}
+                                                            className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg hover:bg-emerald-100">סמן כטופל</button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    )
+                                )}
                             </section>
                         </main>
                     )}
@@ -3489,6 +3738,61 @@
                             </div>
                         </div>
                     )}
+
+                    {/* --- חסימת שמירת הצעה: הלקוח מוגן אצל מיישם אחר. ניתן לפנות ל-ONEBTN מכאן --- */}
+                    {leadBlockedInfo && (() => {
+                        const daysLeft = retentionDaysLeft(leadBlockedInfo.retentionExpiresAt);
+                        return (
+                        <div className="no-print fixed inset-0 z-[80] bg-slate-900/60 flex items-center justify-center p-4"
+                            onClick={closeLeadBlockedModal}>
+                            <div onClick={e => e.stopPropagation()}
+                                className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6">
+                                {!contactSent ? (<>
+                                    <div className="w-14 h-14 mx-auto rounded-full bg-red-100 text-red-700 flex items-center justify-center mb-4">
+                                        <Icon name="shield-alert" size={26} />
+                                    </div>
+                                    <h2 className="text-lg font-black text-slate-800 mb-2 text-center">לא ניתן לשמור - הלקוח מוגן</h2>
+                                    <p className="text-sm text-slate-600 leading-relaxed text-center">
+                                        ללקוח <b>{leadBlockedInfo.clientName}</b> יש כרגע הגנת ליד אצל מיישם אחר.
+                                        {daysLeft > 0 ? (<> נותרו עוד <b>{daysLeft} ימים</b> להגנה.</>) : ' ההגנה עומדת לפוג בקרוב.'}
+                                    </p>
+                                    <p className="text-xs text-slate-400 text-center mt-1">מטעמי הגנת ליד בין מיישמים, לא ניתן לחשוף כאן מי מחזיק בהגנה.</p>
+
+                                    <div className="mt-5 bg-slate-50 border rounded-2xl p-4">
+                                        <h3 className="text-sm font-black text-slate-700 mb-2 flex items-center gap-2">
+                                            <Icon name="mail" size={14} /> צור קשר מול ONEBTN
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mb-3">
+                                            הפרטים שלך ופרטי הלקוח שכבר מילאת בהצעה יישלחו אוטומטית ל-ONEBTN לבירור מול המיישם השני.
+                                        </p>
+                                        <div className="text-xs text-slate-500 space-y-1 mb-3">
+                                            <div><b className="text-slate-700">שולח הפנייה:</b> {(book.profile && book.profile.contactName) || '—'} · {(book.profile && book.profile.phone) || '—'} · {(book.profile && book.profile.email) || '—'}</div>
+                                            <div><b className="text-slate-700">הלקוח המבוקש:</b> {leadBlockedInfo.clientName} · {leadBlockedInfo.clientContactName || '—'} · {leadBlockedInfo.clientPhone || '—'}</div>
+                                        </div>
+                                        <textarea rows={2} value={contactMsg} onChange={e => setContactMsg(e.target.value)}
+                                            placeholder="הערה נוספת לצוות ONEBTN (לא חובה)"
+                                            className="w-full p-2.5 border rounded-xl text-sm bg-white" />
+                                        <button onClick={sendLeadContactRequest} disabled={contactSending}
+                                            className="w-full mt-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl disabled:opacity-50">
+                                            {contactSending ? 'שולח…' : 'שלח פנייה ל-ONEBTN'}
+                                        </button>
+                                    </div>
+
+                                    <button onClick={closeLeadBlockedModal}
+                                        className="mt-4 w-full py-2.5 rounded-xl font-bold text-slate-500 hover:bg-slate-100">סגור</button>
+                                </>) : (<>
+                                    <div className="w-14 h-14 mx-auto rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mb-4">
+                                        <Icon name="check-circle-2" size={26} />
+                                    </div>
+                                    <h2 className="text-lg font-black text-slate-800 mb-2 text-center">הפנייה נשלחה</h2>
+                                    <p className="text-sm text-slate-600 leading-relaxed text-center">צוות ONEBTN קיבל את הפנייה ויחזור אליך בהקדם.</p>
+                                    <button onClick={closeLeadBlockedModal}
+                                        className="mt-6 w-full py-3 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-xl">סגור</button>
+                                </>)}
+                            </div>
+                        </div>
+                        );
+                    })()}
 
                     {/* --- אפשרויות הפקת PDF להצעת מחיר: להציג פירוט שעות הקמה או לא --- */}
                     {printOptionsFor && (

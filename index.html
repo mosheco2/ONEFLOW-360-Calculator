@@ -498,7 +498,7 @@
                         'סבבי אישור ותיקונים מול הלקוח לפני סגירה',
                         'הלקוח רואה רק את המשימות שלו, העובד רואה את מה שהוקצה לו' ] },
                     { title: 'כסף', items: [
-                        'חשבוניות, גבייה ומעקב חובות',
+                        'חשבוניות, גבייה ומעקב חובות (ממשק מול ה-ERP)',
                         'מנויים וחיוב חוזר',
                         'ניהול חשבונות, תנועות, מסגרות אשראי ואובליגו',
                         'קטגוריות, תקציבים והוראות קבע',
@@ -521,9 +521,17 @@
                         'עונה על שאלות ושולף נתונים מהמערכת',
                         'מציע פעולות לאישור',
                         'עברית ואנגלית' ] },
+                    { title: 'יכולות נוספות', items: [
+                        'ביצוע פעולות שגרה במערכת במקום המשתמש, בכפוף לאישור',
+                        'חיזוי ותחזיות על סמך הנתונים ההיסטוריים במערכת',
+                        'יצירת ממשקים חדשים בין המערכת למקורות מידע חיצוניים',
+                        'סיוע ביישום ובהטמעת המערכת אצל משתמשים חדשים',
+                        'סיוע ניהולי — סיכומים, תזכורות ומעקב אחרי משימות פתוחות',
+                        'יצירת מסכי פעולות ומידע חדשים לפי צורך, בלי קוד' ] },
                     { title: 'בקרה ואבטחה', items: [
                         'לפני כל שינוי נתונים מציג מה הוא עומד לעשות, ומחכה לאישור',
-                        'גישה לנתונים לפי הרשאות המשתמש בלבד' ] }
+                        'גישה לנתונים לפי הרשאות המשתמש בלבד',
+                        'מנוהל על ידי מנגנון הרשאות המאפשר שליטה מלאה בחשיפת המודול לפי תפקיד וצורך' ] }
                 ]
             },
             erp: {
@@ -704,7 +712,10 @@
             won: 'bg-emerald-100 text-emerald-700', lost: 'bg-red-100 text-red-700', expired: 'bg-slate-200 text-slate-500'
         };
         const DEFAULT_RETENTION_DAYS = 14;
-        const retentionDaysLeft = (iso) => Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+        // הפרש בימי לוח (לא ב-24 שעות מדויקות), כדי שהמונה ירד עם תחילת יום חדש
+        // ולא ימתין ליום שלם מהשעה המדויקת שבה נוצרה ההצעה
+        const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const retentionDaysLeft = (iso) => Math.round((startOfDay(new Date(iso)) - startOfDay(new Date())) / 86400000);
 
         // סה"כ הצעות פתוחות/מאושרות למיישם, לצורך KPI ברשימת המיישמים (מצב מקומי)
         const proposalKpi = (db, pricebookId) => {
@@ -817,6 +828,14 @@
                     const book = db.books[pricebookId];
                     Object.values(qs).forEach(q => all.push({ ...q, pricebookLabel: book ? book.label : pricebookId }));
                 });
+                const proposalByQuoteId = {};
+                Object.values(db.proposals || {}).forEach(byId => {
+                    Object.values(byId).forEach(p => {
+                        if (!p.sourceQuoteId) return;
+                        const cur = proposalByQuoteId[p.sourceQuoteId];
+                        if (!cur || (p.createdAt || '') > (cur.createdAt || '')) proposalByQuoteId[p.sourceQuoteId] = p;
+                    });
+                });
                 const norm = (s) => (s || '').trim().toLowerCase();
                 const byClient = {};
                 all.forEach(q => { const k = norm(q.clientName); (byClient[k] = byClient[k] || []).push(q); });
@@ -824,10 +843,12 @@
                     const group = byClient[norm(q.clientName)];
                     const first = group.reduce((a, b) => (a.createdAt < b.createdAt ? a : b));
                     const implementerCount = new Set(group.map(g => g.pricebookId)).size;
+                    const linkedProposal = proposalByQuoteId[q.id];
                     return {
                         ...q, contested: implementerCount > 1,
                         clientQuoteCount: group.length, clientImplementerCount: implementerCount,
-                        clientFirstAt: first.createdAt, isFirstForClient: q.id === first.id
+                        clientFirstAt: first.createdAt, isFirstForClient: q.id === first.id,
+                        proposal: linkedProposal ? { id: linkedProposal.id, status: linkedProposal.status, retentionExpiresAt: linkedProposal.retentionExpiresAt } : null
                     };
                 }).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
             },
@@ -1556,6 +1577,14 @@
             const [expandedPartnerId, setExpandedPartnerId] = useState(null);
 
             // פרטי מיישם מורחבים - אומדנים והצעות מחיר, לתצוגת המנהל בלבד
+            const refreshPartnerDetail = async (pricebookId) => {
+                if (!pricebookId || !storage) return;
+                const [qs, ps] = await Promise.all([
+                    storage.listQuotes(pricebookId).catch(() => []),
+                    storage.listProposals(pricebookId).catch(() => [])
+                ]);
+                setPartnerDetail({ quotes: qs || [], proposals: ps || [] });
+            };
             useEffect(() => {
                 if (!expandedPartnerId || !storage) { setPartnerDetail({ quotes: [], proposals: [] }); return; }
                 let alive = true;
@@ -1653,13 +1682,19 @@
             const deleteProposal = async (p) => {
                 if (!storage) return;
                 if (!window.confirm('למחוק את הצעת המחיר של ' + p.clientName + '? הפעולה אינה הפיכה.')) return;
-                try { await storage.removeProposal(p.id); await refreshProposals(); }
+                try {
+                    await storage.removeProposal(p.id); await refreshProposals();
+                    if (expandedPartnerId === p.pricebookId) await refreshPartnerDetail(expandedPartnerId);
+                }
                 catch (e) { alert('המחיקה נכשלה: ' + (e.message || e)); }
             };
 
             const reassignProposalTo = async (p, newPricebookId) => {
                 if (!storage || !newPricebookId || newPricebookId === p.pricebookId) return;
-                try { await storage.reassignProposal(p.id, newPricebookId); await refreshProposals(); }
+                try {
+                    await storage.reassignProposal(p.id, newPricebookId); await refreshProposals();
+                    if (expandedPartnerId === p.pricebookId || expandedPartnerId === newPricebookId) await refreshPartnerDetail(expandedPartnerId);
+                }
                 catch (e) { alert('השיוך מחדש נכשל: ' + (e.message || e)); }
             };
 
@@ -1667,7 +1702,10 @@
                 if (!storage) return;
                 const days = Number(window.prompt('להאריך את השמירה על הליד ב-כמה ימים?', '7'));
                 if (!Number.isFinite(days) || days <= 0) return;
-                try { await storage.extendRetention(p.id, days); await refreshProposals(); }
+                try {
+                    await storage.extendRetention(p.id, days); await refreshProposals();
+                    if (expandedPartnerId === p.pricebookId) await refreshPartnerDetail(expandedPartnerId);
+                }
                 catch (e) { alert('הארכת השמירה נכשלה: ' + (e.message || e)); }
             };
 
@@ -1942,6 +1980,13 @@
             const [proposalError, setProposalError] = useState('');
             const [leadWarningInfo, setLeadWarningInfo] = useState(null);
             const togglePartnerExpanded = (id) => setExpandedPartnerId(prev => prev === id ? null : id);
+            // קופצת מכל מקום באפליקציה (למשל מכותרת קבוצה בטאב הצעות מחיר) ישירות
+            // אל פעילות המיישם המלאה בטאב "מיישמים" של מסך הניהול
+            const openPartnerActivity = (pricebookId) => {
+                setAdminTab('partners');
+                setIsAdminOpen(true);
+                setExpandedPartnerId(pricebookId);
+            };
             const [partnerDetail, setPartnerDetail] = useState({ quotes: [], proposals: [] });
             const [leads, setLeads] = useState([]);
             const [leadsFilter, setLeadsFilter] = useState('');
@@ -2462,6 +2507,10 @@
                                 className="flex items-center gap-1 p-2 text-sm font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                                 <Icon name="rotate-ccw" size={16} /> <span className="hidden md:inline">נקה</span>
                             </button>
+                            <a href="https://oneflow360.shaps.co.il/int/index.html" target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors whitespace-nowrap">
+                                <Icon name="gift" size={16} /> <span className="hidden sm:inline">תכנית השותפים</span>
+                            </a>
                             <button onClick={() => setIsAdminOpen(true)}
                                 className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-600"><Icon name="settings" /></button>
                         </div>
@@ -2605,6 +2654,15 @@
                                                             {q.contested && q.isFirstForClient && (
                                                                 <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full">ראשון</span>
                                                             )}
+                                                            {q.proposal && (() => {
+                                                                const daysLeft = retentionDaysLeft(q.proposal.retentionExpiresAt);
+                                                                const retentionClass = daysLeft <= 0 ? 'bg-red-100 text-red-700' : daysLeft <= 3 ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-700';
+                                                                return (
+                                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${retentionClass}`}>
+                                                                        <Icon name="clock" size={10} /> {daysLeft > 0 ? ('נותרו ' + daysLeft + ' ימי שמירה') : 'תוקף השמירה פג'}
+                                                                    </span>
+                                                                );
+                                                            })()}
                                                         </div>
                                                         <div className="text-[11px] text-slate-500 mt-0.5">
                                                             {q.pricebookLabel} ({q.implementerName || q.pricebookId}) · נוצר {new Date(q.createdAt).toLocaleString('he-IL')}
@@ -2617,6 +2675,14 @@
                                                     <div className="text-xs font-bold text-orange-600 whitespace-nowrap">
                                                         הקמה {money(q.totals?.totalSetup || 0)}
                                                     </div>
+                                                    {q.proposal ? (
+                                                        <button onClick={() => openPartnerActivity(q.pricebookId)}
+                                                            className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-100 whitespace-nowrap">
+                                                            צפה בהצעה
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-[11px] text-slate-400 whitespace-nowrap">טרם הומר להצעת מחיר</span>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -2639,7 +2705,7 @@
                                     </div>
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <input value={proposalFilter} onChange={e => setProposalFilter(e.target.value)}
-                                            placeholder="חיפוש לפי לקוח..." className="p-2.5 border rounded-xl bg-slate-50 text-sm w-56" />
+                                            placeholder={isMasterBook ? "חיפוש לפי מיישם או לקוח..." : "חיפוש לפי לקוח..."} className="p-2.5 border rounded-xl bg-slate-50 text-sm w-56" />
                                         {isMasterBook && (
                                             <select value={newProposalTarget} onChange={e => setNewProposalTarget(e.target.value)}
                                                 className="p-2.5 border rounded-xl bg-slate-50 text-sm">
@@ -2669,78 +2735,105 @@
                                         </p>
                                     );
                                     if (filtered.length === 0) return <p className="text-sm text-slate-400 py-10 text-center">לא נמצאו הצעות תואמות לחיפוש.</p>;
-                                    return (
-                                        <div className="scroll-x space-y-2">
-                                            {filtered.map(p => {
-                                                const daysLeft = retentionDaysLeft(p.retentionExpiresAt);
-                                                const retentionClass = daysLeft <= 0 ? 'bg-red-100 text-red-700' : daysLeft <= 3 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600';
-                                                return (
-                                                    <div key={p.id} className="flex flex-wrap items-center gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                                                        <div className="flex-grow min-w-[220px]">
-                                                            <div className="font-black text-slate-800 flex items-center gap-2 flex-wrap">
-                                                                {p.clientName}
-                                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${PROPOSAL_STATUS_CLASSES[p.status]}`}>{PROPOSAL_STATUS_LABELS[p.status]}</span>
-                                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${retentionClass}`}>
-                                                                    <Icon name="clock" size={10} /> {daysLeft > 0 ? ('נותרו ' + daysLeft + ' ימי שמירה') : 'תוקף השמירה פג'}
-                                                                </span>
-                                                                <span className="text-[10px] font-bold text-slate-400">
-                                                                    נפתח בתאריך {new Date(p.createdAt).toLocaleDateString('he-IL')}
-                                                                </span>
-                                                            </div>
-                                                            {isMasterBook && (
-                                                                <div className="text-[11px] text-slate-500 mt-0.5">{p.pricebookLabel} ({p.implementerName || p.pricebookId})</div>
-                                                            )}
-                                                            <div className="text-[11px] text-slate-500 mt-0.5">
-                                                                {p.clientContactName}{p.clientPhone ? ' · ' + p.clientPhone : ''}{p.clientEmail ? ' · ' + p.clientEmail : ''}
-                                                            </div>
-                                                            {/* האומדן שממנו הומרה ההצעה, לצד ההצעה עצמה - כדי לראות את שניהם באותה שורה */}
-                                                            <div className="text-[11px] mt-1 flex items-center gap-1.5">
-                                                                <Icon name="file-text" size={11} className="text-slate-400" />
-                                                                {p.sourceQuote ? (
-                                                                    <span className="text-slate-500">
-                                                                        אומדן מקור מ-{new Date(p.sourceQuote.createdAt).toLocaleDateString('he-IL')}:{' '}
-                                                                        <b className="text-slate-700">{money(p.sourceQuote.totals?.totalMRR || 0)}/חודש</b>
-                                                                        {p.sourceQuote.note && <span> · {p.sourceQuote.note}</span>}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-slate-400">נוצרה ללא אומדן מקור</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-sm font-black text-slate-700 whitespace-nowrap">
-                                                                {money(p.totals?.totalMRR || 0)} <span className="text-[10px] font-normal text-slate-400">לחודש</span>
-                                                            </div>
-                                                            <div className="text-xs font-bold text-orange-600 whitespace-nowrap">
-                                                                הקמה {money(p.totals?.totalSetup || 0)}
-                                                            </div>
-                                                        </div>
-                                                        {isMasterBook && (
-                                                            <select defaultValue="" onChange={e => { if (e.target.value) { reassignProposalTo(p, e.target.value); e.target.value = ''; } }}
-                                                                className="text-xs p-2 border rounded-lg bg-white">
-                                                                <option value="">שייך מחדש ל...</option>
-                                                                {books.filter(b => b.id !== 'master' && b.id !== p.pricebookId).map(b => (
-                                                                    <option key={b.id} value={b.id}>{b.label || b.id}</option>
-                                                                ))}
-                                                            </select>
-                                                        )}
-                                                        {isMasterBook && (
-                                                            <button onClick={() => extendProposalRetention(p)}
-                                                                className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg whitespace-nowrap">הארך שמירה</button>
-                                                        )}
-                                                        <button onClick={() => printProposal(p)}
-                                                            className="text-xs font-bold text-slate-700 bg-white border px-3 py-2 rounded-lg hover:bg-slate-50 whitespace-nowrap flex items-center gap-1">
-                                                            <Icon name="file-down" size={14} /> הפק PDF
-                                                        </button>
-                                                        <button onClick={() => openProposalForEdit(p)}
-                                                            className="text-xs font-bold text-blue-600 bg-white border border-blue-200 px-3 py-2 rounded-lg hover:bg-blue-50">ערוך</button>
-                                                        <button onClick={() => duplicateProposalDraft(p)}
-                                                            className="text-blue-500 hover:text-blue-700 bg-white border p-2 rounded-lg" title="שכפל"><Icon name="copy" size={16} /></button>
-                                                        <button onClick={() => deleteProposal(p)}
-                                                            className="text-red-400 hover:text-red-600 bg-white border p-2 rounded-lg" title="מחק"><Icon name="trash-2" size={16} /></button>
+
+                                    const renderRow = (p) => {
+                                        const daysLeft = retentionDaysLeft(p.retentionExpiresAt);
+                                        const retentionClass = daysLeft <= 0 ? 'bg-red-100 text-red-700' : daysLeft <= 3 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600';
+                                        return (
+                                            <div key={p.id} className="flex flex-wrap items-center gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                                                <div className="flex-grow min-w-[220px]">
+                                                    <div className="font-black text-slate-800 flex items-center gap-2 flex-wrap">
+                                                        {p.clientName}
+                                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${PROPOSAL_STATUS_CLASSES[p.status]}`}>{PROPOSAL_STATUS_LABELS[p.status]}</span>
+                                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 ${retentionClass}`}>
+                                                            <Icon name="clock" size={10} /> {daysLeft > 0 ? ('נותרו ' + daysLeft + ' ימי שמירה') : 'תוקף השמירה פג'}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-slate-400">
+                                                            נפתח בתאריך {new Date(p.createdAt).toLocaleDateString('he-IL')}
+                                                        </span>
                                                     </div>
-                                                );
-                                            })}
+                                                    <div className="text-[11px] text-slate-500 mt-0.5">
+                                                        {p.clientContactName}{p.clientPhone ? ' · ' + p.clientPhone : ''}{p.clientEmail ? ' · ' + p.clientEmail : ''}
+                                                    </div>
+                                                    {/* האומדן שממנו הומרה ההצעה, לצד ההצעה עצמה - כדי לראות את שניהם באותה שורה */}
+                                                    <div className="text-[11px] mt-1 flex items-center gap-1.5">
+                                                        <Icon name="file-text" size={11} className="text-slate-400" />
+                                                        {p.sourceQuote ? (
+                                                            <span className="text-slate-500">
+                                                                אומדן מקור מ-{new Date(p.sourceQuote.createdAt).toLocaleDateString('he-IL')}:{' '}
+                                                                <b className="text-slate-700">{money(p.sourceQuote.totals?.totalMRR || 0)}/חודש</b>
+                                                                {p.sourceQuote.note && <span> · {p.sourceQuote.note}</span>}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400">נוצרה ללא אומדן מקור</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm font-black text-slate-700 whitespace-nowrap">
+                                                        {money(p.totals?.totalMRR || 0)} <span className="text-[10px] font-normal text-slate-400">לחודש</span>
+                                                    </div>
+                                                    <div className="text-xs font-bold text-orange-600 whitespace-nowrap">
+                                                        הקמה {money(p.totals?.totalSetup || 0)}
+                                                    </div>
+                                                </div>
+                                                {isMasterBook && (
+                                                    <select defaultValue="" onChange={e => { if (e.target.value) { reassignProposalTo(p, e.target.value); e.target.value = ''; } }}
+                                                        className="text-xs p-2 border rounded-lg bg-white">
+                                                        <option value="">שייך מחדש ל...</option>
+                                                        {books.filter(b => b.id !== 'master' && b.id !== p.pricebookId).map(b => (
+                                                            <option key={b.id} value={b.id}>{b.label || b.id}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                                {isMasterBook && (
+                                                    <button onClick={() => extendProposalRetention(p)}
+                                                        className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg whitespace-nowrap">הארך שמירה</button>
+                                                )}
+                                                <button onClick={() => printProposal(p)}
+                                                    className="text-xs font-bold text-slate-700 bg-white border px-3 py-2 rounded-lg hover:bg-slate-50 whitespace-nowrap flex items-center gap-1">
+                                                    <Icon name="file-down" size={14} /> הפק PDF
+                                                </button>
+                                                <button onClick={() => openProposalForEdit(p)}
+                                                    className="text-xs font-bold text-blue-600 bg-white border border-blue-200 px-3 py-2 rounded-lg hover:bg-blue-50">ערוך</button>
+                                                <button onClick={() => duplicateProposalDraft(p)}
+                                                    className="text-blue-500 hover:text-blue-700 bg-white border p-2 rounded-lg" title="שכפל"><Icon name="copy" size={16} /></button>
+                                                <button onClick={() => deleteProposal(p)}
+                                                    className="text-red-400 hover:text-red-600 bg-white border p-2 rounded-lg" title="מחק"><Icon name="trash-2" size={16} /></button>
+                                            </div>
+                                        );
+                                    };
+
+                                    if (!isMasterBook) {
+                                        return <div className="scroll-x space-y-2">{filtered.map(renderRow)}</div>;
+                                    }
+
+                                    // המנהל רואה הצעות מכל המיישמים - מקובצות תחת כותרת מיישם לחיצה,
+                                    // שפותחת את פעילות המיישם המלאה בטאב "מיישמים"
+                                    const groups = {};
+                                    filtered.forEach(p => {
+                                        const key = p.pricebookId;
+                                        if (!groups[key]) groups[key] = { pricebookId: key, pricebookLabel: p.pricebookLabel, implementerName: p.implementerName, items: [] };
+                                        groups[key].items.push(p);
+                                    });
+                                    const groupList = Object.values(groups).sort((a, b) =>
+                                        (b.items[0]?.updatedAt || '').localeCompare(a.items[0]?.updatedAt || ''));
+
+                                    return (
+                                        <div className="space-y-5">
+                                            {groupList.map(g => (
+                                                <div key={g.pricebookId}>
+                                                    <button onClick={() => openPartnerActivity(g.pricebookId)}
+                                                        className="flex items-center gap-2 mb-2 text-sm font-black text-indigo-700 hover:text-indigo-900 hover:underline">
+                                                        <Icon name="user" size={14} />
+                                                        {g.pricebookLabel} ({g.implementerName || g.pricebookId})
+                                                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{g.items.length} הצעות</span>
+                                                    </button>
+                                                    <div className="scroll-x space-y-2">
+                                                        {g.items.map(renderRow)}
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     );
                                 })()}
@@ -4057,7 +4150,24 @@
                                                                                         {money(p.totals?.totalMRR || 0)}/חודש · הקמה {money(p.totals?.totalSetup || 0)}
                                                                                     </span>
                                                                                     <button onClick={() => openProposalForEdit(p)}
-                                                                                        className="text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-bold whitespace-nowrap">פתח</button>
+                                                                                        className="text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-bold whitespace-nowrap">ערוך</button>
+                                                                                    <button onClick={() => printProposal(p)}
+                                                                                        className="text-slate-700 bg-white border px-2 py-1 rounded-md font-bold whitespace-nowrap flex items-center gap-1">
+                                                                                        <Icon name="file-down" size={12} /> PDF
+                                                                                    </button>
+                                                                                    <button onClick={() => duplicateProposalDraft(p)}
+                                                                                        className="text-blue-500 bg-white border px-2 py-1 rounded-md" title="שכפל"><Icon name="copy" size={12} /></button>
+                                                                                    <button onClick={() => extendProposalRetention(p)}
+                                                                                        className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md font-bold whitespace-nowrap">הארך שמירה</button>
+                                                                                    <select defaultValue="" onChange={e => { if (e.target.value) { reassignProposalTo(p, e.target.value); e.target.value = ''; } }}
+                                                                                        className="p-1.5 border rounded-md bg-white text-[11px]">
+                                                                                        <option value="">שייך מחדש ל...</option>
+                                                                                        {books.filter(bk => bk.id !== 'master' && bk.id !== p.pricebookId).map(bk => (
+                                                                                            <option key={bk.id} value={bk.id}>{bk.label || bk.id}</option>
+                                                                                        ))}
+                                                                                    </select>
+                                                                                    <button onClick={() => deleteProposal(p)}
+                                                                                        className="text-red-400 bg-white border px-2 py-1 rounded-md" title="מחק"><Icon name="trash-2" size={12} /></button>
                                                                                     <span className="basis-full text-[11px] text-slate-400">
                                                                                         {p.sourceQuote
                                                                                             ? 'מבוסס על אומדן מ-' + new Date(p.sourceQuote.createdAt).toLocaleDateString('he-IL') + ': ' + money(p.sourceQuote.totals?.totalMRR || 0) + '/חודש'

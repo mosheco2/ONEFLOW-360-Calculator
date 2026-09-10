@@ -583,12 +583,21 @@ async function route(req, res, url, who) {
                        count(distinct pricebook_id) as client_books,
                        min(created_at) as client_first_at
                 from quotes group by lower(trim(client_name))
+            ),
+            prop as (
+                select distinct on (source_quote_id)
+                       source_quote_id, id as proposal_id, status as proposal_status, retention_expires_at
+                from proposals
+                where source_quote_id is not null
+                order by source_quote_id, created_at desc
             )
             select q.*, p.label as pricebook_label,
-                   a.client_rows, a.client_books, a.client_first_at
+                   a.client_rows, a.client_books, a.client_first_at,
+                   pr.proposal_id, pr.proposal_status, pr.retention_expires_at
             from quotes q
             join pricebooks p on p.id=q.pricebook_id
             join agg a on a.key = lower(trim(q.client_name))
+            left join prop pr on pr.source_quote_id = q.id
             order by q.created_at desc limit 2000`);
         return send(res, 200, rows.map(r => ({
             ...quoteOut(r),
@@ -596,7 +605,8 @@ async function route(req, res, url, who) {
             clientQuoteCount: Number(r.client_rows),
             clientImplementerCount: Number(r.client_books),
             clientFirstAt: r.client_first_at,
-            isFirstForClient: new Date(r.created_at).getTime() === new Date(r.client_first_at).getTime()
+            isFirstForClient: new Date(r.created_at).getTime() === new Date(r.client_first_at).getTime(),
+            proposal: r.proposal_id ? { id: r.proposal_id, status: r.proposal_status, retentionExpiresAt: r.retention_expires_at } : null
         })));
     }
 

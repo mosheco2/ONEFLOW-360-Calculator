@@ -4554,7 +4554,26 @@
                                 </div>
                             )}
 
-                            <div className="avoid-break" style={{ marginTop: '40px', textAlign: 'center', fontSize: '10pt', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                            <div className="avoid-break" style={{ marginTop: '40px', paddingTop: '25px', borderTop: '1px solid #e2e8f0' }}>
+                                <h2>אישור הלקוח</h2>
+                                <p style={{ fontSize: '10pt', color: '#64748b', marginBottom: '20px' }}>אני מאשר/ת כי קראתי את הצעת המחיר על תכולתה ותנאיה, ומאשר/ת את ביצועה.</p>
+                                <div style={{ display: 'flex', gap: '30px' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ borderBottom: '1px solid #1e293b', height: '35px' }}></div>
+                                        <p style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>שם החותם ותפקיד</p>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ borderBottom: '1px solid #1e293b', height: '35px' }}></div>
+                                        <p style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>תאריך</p>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ borderBottom: '1px solid #1e293b', height: '35px' }}></div>
+                                        <p style={{ fontSize: '9pt', color: '#64748b', marginTop: '4px' }}>חתימה וחותמת</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="avoid-break" style={{ marginTop: '30px', textAlign: 'center', fontSize: '10pt', color: '#64748b', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
                                 {daysLeft > 0 && (
                                     <p style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '11pt' }}>ההצעה בתוקף עד {new Date(pr.retentionExpiresAt).toLocaleDateString('he-IL')}</p>
                                 )}

@@ -1968,6 +1968,14 @@
             const [adminNewPwMsg, setAdminNewPwMsg] = useState(null);
             const [adminNewPwBusy, setAdminNewPwBusy] = useState(false);
 
+            // "שכחתי סיסמה" - זרימה אחת עצמאית: מפתח הגישה הגולמי + סיסמה חדשה יחד,
+            // בלי צורך להבין את ההבחנה בין שדה "מפתח גישה" למעלה לבין "כניסת מנהל" למטה
+            const [showForgotPassword, setShowForgotPassword] = useState(false);
+            const [forgotToken, setForgotToken] = useState('');
+            const [forgotNewPw, setForgotNewPw] = useState('');
+            const [forgotBusy, setForgotBusy] = useState(false);
+            const [forgotMsg, setForgotMsg] = useState(null);
+
             const refreshAdminStatus = async () => {
                 if (!storage || storage.name !== 'api') return;
                 try { const r = await storage.adminStatus(); setAdminHasPassword(!!(r && r.hasPassword)); }
@@ -2011,6 +2019,33 @@
                     }
                 } catch (e) { setAdminNewPwMsg({ ok: false, text: 'הקביעה נכשלה: ' + (e.message || e) }); }
                 setAdminNewPwBusy(false);
+            };
+
+            // מבצע איפוס מלא במכה אחת: בונה מתאם זמני עם המפתח הגולמי שהוזן כאן,
+            // בלי לחכות לעדכון ה-state של storage (שממילא לא היה מוכן באותה קריאה)
+            const doForgotPasswordReset = async () => {
+                if (!forgotToken || !forgotNewPw || forgotNewPw.length < 4) {
+                    setForgotMsg({ ok: false, text: 'יש להזין את מפתח הגישה הגולמי ואת הסיסמה החדשה (4+ תווים).' });
+                    return;
+                }
+                setForgotBusy(true); setForgotMsg(null);
+                try {
+                    const tempStorage = ApiAdapter({ ...backendCfg, token: forgotToken });
+                    const r = await tempStorage.adminSetPassword(forgotNewPw);
+                    if (r && r.ok) {
+                        // גם שומרים את המפתח הגולמי לשימוש מיידי, וגם מתחברים עם הסיסמה החדשה
+                        // (מנפיקה אסימון כניסת מנהל אמיתי) - כדי שהתג "מחובר כמנהל" יהיה מדויק
+                        writeBackendConfig({ ...backendCfg, token: forgotToken });
+                        await tempStorage.adminLogin(forgotNewPw);
+                        window.location.reload();
+                        return;
+                    } else {
+                        setForgotMsg({ ok: false, text: r && r.error === 'forbidden'
+                            ? 'מפתח הגישה שגוי. אפשר למצוא את הערך הנכון ב-Render: השירות oneflow-api ← Environment ← ADMIN_TOKEN.'
+                            : 'האיפוס נכשל.' });
+                    }
+                } catch (e) { setForgotMsg({ ok: false, text: 'שגיאה: ' + (e.message || e) }); }
+                setForgotBusy(false);
             };
 
             const doAdminLogout = () => {
@@ -4683,6 +4718,39 @@
                                                     )}
                                                     {adminHasPassword === false && !adminLoginMsg && (
                                                         <p className="text-xs font-bold text-amber-700 mt-2">טרם הוגדרה סיסמת מנהל - קבע אחת למטה.</p>
+                                                    )}
+                                                    <button onClick={() => { setShowForgotPassword(v => !v); setForgotMsg(null); }}
+                                                        className="text-xs font-bold text-blue-600 hover:underline mt-3">
+                                                        שכחת את הסיסמה?
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {!isAdminLoggedIn && showForgotPassword && (
+                                                <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 mb-4">
+                                                    <div className="text-sm font-black text-amber-900 mb-1 flex items-center gap-2">
+                                                        <Icon name="unlock" size={16} /> איפוס סיסמת מנהל
+                                                    </div>
+                                                    <p className="text-[11px] text-amber-800 leading-relaxed mb-3">
+                                                        לאיפוס נדרש מפתח הגישה הגולמי של המערכת (לא הסיסמה שנשכחה) - נמצא בלוח הבקרה של Render:
+                                                        השירות <b>oneflow-api</b> ← טאב <b>Environment</b> ← המשתנה <b>ADMIN_TOKEN</b>.
+                                                        הדבק אותו כאן יחד עם הסיסמה החדשה, וזה גם יאפס וגם יחבר אותך כמנהל מיד.
+                                                    </p>
+                                                    <div className="space-y-2">
+                                                        <input type="password" value={forgotToken} dir="ltr"
+                                                            onChange={e => { setForgotToken(e.target.value); setForgotMsg(null); }}
+                                                            placeholder="מפתח הגישה הגולמי (ADMIN_TOKEN)" className="w-full p-3 border rounded-xl bg-white font-mono text-xs" />
+                                                        <input type="password" value={forgotNewPw} dir="ltr"
+                                                            onChange={e => { setForgotNewPw(e.target.value); setForgotMsg(null); }}
+                                                            onKeyDown={e => { if (e.key === 'Enter') doForgotPasswordReset(); }}
+                                                            placeholder="סיסמת מנהל חדשה (4+ תווים)" className="w-full p-3 border rounded-xl bg-white font-bold" />
+                                                        <button onClick={doForgotPasswordReset} disabled={forgotBusy || !forgotToken || !forgotNewPw}
+                                                            className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl disabled:opacity-50">
+                                                            {forgotBusy ? 'מאפס…' : 'אפס סיסמה והתחבר'}
+                                                        </button>
+                                                    </div>
+                                                    {forgotMsg && (
+                                                        <p className={`text-xs font-bold mt-2 ${forgotMsg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{forgotMsg.text}</p>
                                                     )}
                                                 </div>
                                             )}
